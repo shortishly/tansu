@@ -13,10 +13,12 @@
 %% limitations under the License.
 
 -module(raft).
+-export([connect/1]).
 -export([get_env/2]).
+-export([log/1]).
 -export([make/0]).
 -export([start/0]).
-
+-export([trace/1]).
 
 start() ->
     application:ensure_all_started(?MODULE).
@@ -24,5 +26,37 @@ start() ->
 make() ->
     make:all([load]).
 
+connect(Peer) ->
+    raft_consensus:connect(Peer).
+
+log(Command) ->
+    raft_consensus:log(Command).
+
 get_env(Key, Strategy) ->
     gproc:get_env(l, ?MODULE, Key, Strategy).
+
+ensure_loaded() ->
+    lists:foreach(fun code:ensure_loaded/1, modules()).
+
+
+modules() ->
+    {ok, Modules} = application:get_key(?MODULE, modules),
+    Modules.
+
+
+trace(true) ->
+    ensure_loaded(),
+    case recon_trace:calls([m(Module) || Module <- modules()],
+                           {1000, 500},
+                           [{scope, local},
+                            {pid, all}]) of
+        Matches when Matches > 0 ->
+            ok;
+        _ ->
+            error
+    end;
+trace(false) ->
+    recon_trace:clear().
+
+m(Module) ->
+    {Module, '_', '_'}.

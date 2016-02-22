@@ -60,7 +60,7 @@ term(Id) ->
                   [#?MODULE{term = CurrentTerm}] ->
                       CurrentTerm;
                   [] ->
-                      error({badarg, Id})
+                      error(badarg, Id)
               end
       end).
 
@@ -73,13 +73,13 @@ term(Id, New) ->
                       New;
 
                   [#?MODULE{term = Current}] when New < Current ->
-                      error({badarg, Id});
+                      error(badarg, Id);
 
                   [#?MODULE{term = Current}] ->
                       Current;
 
                   [] ->
-                      error({badarg, Id})
+                      error(badarg, Id)
               end
       end).
 
@@ -91,11 +91,11 @@ increment(Id, CurrentTerm) ->
                       ok = mnesia:write(PS#?MODULE{term = CurrentTerm + 1}),
                       CurrentTerm+1;
 
-                  [#?MODULE{term = Term}] ->
-                      error({badarg, Term});
+                  [#?MODULE{term = _}] ->
+                      error(badarg, [Id, CurrentTerm]);
 
                   [] ->
-                      error({badarg, Id})
+                      error(badarg, [Id, CurrentTerm])
               end
       end).
 
@@ -106,7 +106,7 @@ voted_for(Id) ->
                   [#?MODULE{voted_for = VotedFor}] ->
                       VotedFor;
                   [] ->
-                      error({badarg, Id})
+                      error(badarg, [Id])
               end
       end).
 
@@ -119,7 +119,7 @@ voted_for(Id, VotedFor) ->
                              PS#?MODULE{voted_for = VotedFor}),
                       VotedFor;
                   [] ->
-                      error({badarg, Id})
+                      error(badarg, [Id, VotedFor])
               end
       end).
 

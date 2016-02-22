@@ -13,9 +13,11 @@
 %% limitations under the License.
 
 -module(raft_rpc).
--export([append_entries/3]).
+-export([append_entries/6]).
+-export([append_entries/7]).
 -export([demarshall/2]).
 -export([heartbeat/5]).
+-export([log/2]).
 -export([request_vote/4]).
 -export([vote/4]).
 
@@ -30,10 +32,32 @@ request_vote(Term, Candidate, LastLogIndex, LastLogTerm) ->
           last_log_term => LastLogTerm}}).
 
 
-append_entries(Leader, Term, Success) ->
-    raft_connection:send(Leader, #{append_entries => #{term => Term,
-                                                       leader => Leader,
-                                                       success => Success}}).
+append_entries(Leader, Follower, Term, PrevLogIndex, PrevLogTerm, Success) ->
+    raft_connection:send(Leader, #{append_entries => #{
+                                     term => Term,
+                                     prev_log_index => PrevLogIndex,
+                                     prev_log_term => PrevLogTerm,
+                                     follower => Follower,
+                                     leader => Leader,
+                                     success => Success}}).
+
+append_entries(Follower, LeaderTerm, Leader, LastApplied, PrevLogTerm,
+               LeaderCommitIndex, Entries) ->
+    raft_connection:send(Follower,
+                         #{append_entries => #{
+                             term => LeaderTerm,
+                             leader => Leader,
+                             prev_log_index =>LastApplied,
+                             prev_log_term => PrevLogTerm,
+                             entries => Entries,
+                             leader_commit => LeaderCommitIndex}}).
+
+
+
+
+
+log(Leader, Command) ->
+    raft_connection:send(Leader, #{log => Command}).
 
 
 vote(Candidate, Elector, Term, Granted) ->
@@ -50,7 +74,6 @@ heartbeat(LeaderTerm, Leader, LastApplied, PrevLogTerm, LeaderCommitIndex) ->
                             prev_log_term => PrevLogTerm,
                             entries => [],
                             leader_commit => LeaderCommitIndex}}).
-
 
 
 demarshall(Pid, Message) ->
@@ -86,10 +109,18 @@ demarshall(Pid, Message) ->
               LeaderCommitIndex);
 
         #{append_entries := #{term := Term,
-                              leader := Leader,
+                              leader := _Leader,
+                              prev_log_index := PrevLogIndex,
+                              prev_log_term := PrevLogTerm,
+                              follower := Follower,
                               success := Success}} ->
-            raft_connection:associate(Pid, Leader),
-            raft_consensus:append_entries(Term, Success)
+            raft_connection:associate(Pid, Follower),
+            raft_consensus:append_entries(
+              Follower, Term, Success, PrevLogIndex, PrevLogTerm);
+
+        #{log := Command} ->
+            raft_consensus:log(Command)
+
     end.
 
 decode(Message) ->

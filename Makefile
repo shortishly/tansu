@@ -23,6 +23,7 @@ DEPS = \
 	gproc \
 	jsx \
 	gun \
+	recon \
 	rfc4122
 
 LOCAL_DEPS = \

@@ -15,6 +15,8 @@
 -module(raft_connection).
 -export([associate/2]).
 -export([broadcast/1]).
+-export([delete/1]).
+-export([ids/0]).
 -export([new/2]).
 -export([send/2]).
 -export([size/0]).
@@ -28,14 +30,22 @@
           }).
 
 on_load() ->
-    crown_table:new(?MODULE, ordered_set).
+    crown_table:reuse(?MODULE, ordered_set).
 
 
 new(Pid, Sender) ->
-    ets:insert_new(?MODULE, r(Pid, undefined, Sender)) orelse error(badarg).
+    ets:insert_new(?MODULE, r(Pid, undefined, Sender)) orelse
+        error(badarg, [Pid, Sender]).
+
+delete(Pid) ->
+    ets:delete(?MODULE, Pid).
 
 associate(Pid, Id) ->
-    ets:update_element(?MODULE, Pid, {#?MODULE.id, Id}).
+    ets:update_element(?MODULE, Pid, {#?MODULE.id, Id}) orelse
+        error(badarg, [Pid, Id]).
+
+ids() ->
+    [Id || #?MODULE{id = Id} <- ets:match_object(?MODULE, r('_', '_', '_'))].
 
 
 broadcast(Message) ->

@@ -13,9 +13,13 @@
 %% limitations under the License.
 
 -module(raft_log).
+-export([append_entries/3]).
 -export([commit_index/0]).
 -export([create_table/0]).
 -export([last/0]).
+-export([read/1]).
+-export([term_for_index/1]).
+-export([write/2]).
 
 -include("raft_log.hrl").
 
@@ -38,7 +42,7 @@ create_table() ->
             true;
 
         {aborted, Reason} ->
-            error(Reason)
+            error(badarg, Reason)
     end.
 
 last() ->
@@ -47,21 +51,90 @@ last() ->
           () ->
               case mnesia:last(?MODULE) of
                   '$end_of_table' ->
-                      #{id => 0};
+                      #{index => 0};
 
-                  Id ->
-                      case mnesia:read(?MODULE, Id) of
-                          [#?MODULE{id = Id, term = Term, command = Command}] ->
-                              #{id => Id, term => Term, command => Command};
-                          [] ->
-                              error(badarg)
-                      end
+                  Index ->
+                      [#?MODULE{
+                           index = I,
+                           term = T,
+                           command = C}] = mnesia:read(?MODULE, Index),
+                      #{index => I, term => T, command => C}
               end
       end).
 
+append_entries(PrevLogIndex, PrevLogTerm, Entries) ->
+    activity(
+      fun
+          () ->
+              case {mnesia:last(?MODULE), mnesia:read(?MODULE, PrevLogIndex)} of
+                  {'$end_of_table', []} ->
+                      {ok, append_entries(PrevLogIndex, Entries)};
+
+                  {_, []} ->
+                      {ok, append_entries(PrevLogIndex, Entries)};
+
+                  {_, [#?MODULE{term = PrevLogTerm}]} ->
+                      {ok, append_entries(PrevLogIndex, Entries)};
+
+                  {_, [#?MODULE{}]} ->
+                      {error, unmatched_term}
+              end
+      end).
+
+
+append_entries(PrevLogIndex, Entries) ->
+    lists:foldl(
+      fun
+          (#{term := T, command := C}, I) ->
+              mnesia:write(#?MODULE{index = I+1,
+                                    term = T,
+                                    command = C}),
+              I+1
+      end,
+      PrevLogIndex,
+      Entries).
+
+
+read(Index) ->
+    activity(
+      fun
+          () ->
+              case mnesia:read(?MODULE, Index) of
+                  [#?MODULE{term = T, command = C}] ->
+                      #{term => T, command => C};
+                  [] ->
+                      error(badarg, Index)
+              end
+      end).
+
+
+write(Term, Command) ->
+    activity(
+      fun
+          () ->
+              Index = commit_index() + 1,
+              mnesia:write(#?MODULE{index = Index, term = Term,
+                                    command = Command}),
+              Index
+      end).
+
 commit_index() ->
-    #{id := Id} = last(),
-    Id.
+    #{index := Index} = last(),
+    Index.
+
+term_for_index(0) ->
+    0;
+term_for_index(Index) ->
+    activity(
+      fun
+          () ->
+              case mnesia:read(?MODULE, Index) of
+                  [#?MODULE{term = Term}] ->
+                      Term;
+                  [] ->
+                      error(badarg, Index)
+              end
+      end).
 
 activity(F) ->
     mnesia:activity(transaction, F).
