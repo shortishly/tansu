@@ -51,7 +51,7 @@ last() ->
           () ->
               case mnesia:last(?MODULE) of
                   '$end_of_table' ->
-                      #{index => 0};
+                      #{index => 0, term => 0};
 
                   Index ->
                       [#?MODULE{

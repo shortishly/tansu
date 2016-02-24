@@ -231,9 +231,28 @@ follower({request_vote, #{term := Term, candidate := Candidate,
 
 %% If votedFor is null or candidateId, and candidate’s log is at least
 %% as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
-follower({request_vote, #{term := T, candidate := Candidate}},
+follower({request_vote, #{term := T,
+                          last_log_index := LastLogIndex,
+                          last_log_term := LastLogTerm,
+                          candidate := Candidate}},
          #{id := Id, term := T, voted_for := Candidate} = Data) ->
-    raft_rpc:vote(Candidate, Id, T, true),
+
+    %% Raft determines which of two logs is more up-to-date by
+    %% comparing the index and term of the last entries in the
+    %% logs. If the logs have last entries with different terms, then
+    %% the log with the later term is more up-to-date. If the logs end
+    %% with the same term, then whichever log is longer is more
+    %% up-to-date.
+    case raft_log:last() of
+        #{term := LogTerm} when LogTerm > LastLogTerm ->
+            raft_rpc:vote(Candidate, Id, T, false);
+
+        #{term := LogTerm} when LogTerm < LastLogTerm ->
+            raft_rpc:vote(Candidate, Id, T, true);
+
+        #{term := LastLogTerm, index := LogIndex} ->
+            raft_rpc:vote(Candidate, Id, T, LastLogIndex >= LogIndex)
+    end,
     {next_state, follower, call_election(Data)};
 
 %% If votedFor is null or candidateId, and candidate’s log is at least
