@@ -218,24 +218,20 @@ follower({request_vote, #{term := Term, candidate := Candidate}},
 
 %% If votedFor is null or candidateId, and candidate’s log is at least
 %% as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
-follower({request_vote, #{term := Term, candidate := Candidate,
-                          last_log_index := LastLogIndex}},
-         #{term := Current, commit_index := CommmitIndex,
-           id := Id} = Data) when (Term >= Current) andalso
-                                  (LastLogIndex >= CommmitIndex) ->
-    raft_rpc:vote(Candidate, Id, Term, true),
-    {next_state, follower, call_election(
-                             Data#{term => raft_ps:term(Id, Term),
-                                   voted_for => raft_ps:voted_for(
-                                                  Id, Candidate)})};
+follower({request_vote, #{term := T,
+                          candidate := Candidate}},
+         #{id := Id, term := T, voted_for := Candidate} = Data) ->
+    raft_rpc:vote(Candidate, Id, T, true),
+    {next_state, follower, call_election(Data)};
+
 
 %% If votedFor is null or candidateId, and candidate’s log is at least
 %% as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
-follower({request_vote, #{term := T,
+follower({request_vote, #{term := Term,
+                          candidate := Candidate,
                           last_log_index := LastLogIndex,
-                          last_log_term := LastLogTerm,
-                          candidate := Candidate}},
-         #{id := Id, term := T, voted_for := Candidate} = Data) ->
+                          last_log_term := LastLogTerm}},
+         #{term := Current, id := Id} = Data) when (Term >= Current) ->
 
     %% Raft determines which of two logs is more up-to-date by
     %% comparing the index and term of the last entries in the
@@ -245,15 +241,36 @@ follower({request_vote, #{term := T,
     %% up-to-date.
     case raft_log:last() of
         #{term := LogTerm} when LogTerm > LastLogTerm ->
-            raft_rpc:vote(Candidate, Id, T, false);
+            raft_rpc:vote(Candidate, Id, Term, false),
+            raft_ps:voted_for(Id, undefined),
+            {next_state, follower, maps:without(
+                                     [voted_for],
+                                     call_election(
+                                       Data#{term => raft_ps:term(Id, Term)}))};
 
         #{term := LogTerm} when LogTerm < LastLogTerm ->
-            raft_rpc:vote(Candidate, Id, T, true);
+            raft_rpc:vote(Candidate, Id, Term, true),
+            {next_state, follower, call_election(
+                                     Data#{term => raft_ps:term(Id, Term),
+                                           voted_for => raft_ps:voted_for(
+                                                          Id, Candidate)})};
 
-        #{term := LastLogTerm, index := LogIndex} ->
-            raft_rpc:vote(Candidate, Id, T, LastLogIndex >= LogIndex)
-    end,
-    {next_state, follower, call_election(Data)};
+
+        #{index := LogIndex} when LastLogIndex >= LogIndex->
+            raft_rpc:vote(Candidate, Id, Term, true),
+            {next_state, follower, call_election(
+                                     Data#{term => raft_ps:term(Id, Term),
+                                           voted_for => raft_ps:voted_for(
+                                                          Id, Candidate)})};
+
+        #{index := LogIndex} when LastLogIndex < LogIndex->
+            raft_rpc:vote(Candidate, Id, Term, false),
+            raft_ps:voted_for(Id, undefined),
+            {next_state, follower, maps:without(
+                                     [voted_for],
+                                     call_election(
+                                       Data#{term => raft_ps:term(Id, Term)}))}
+    end;
 
 %% If votedFor is null or candidateId, and candidate’s log is at least
 %% as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
