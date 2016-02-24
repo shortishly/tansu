@@ -18,9 +18,9 @@
 
 
 election() ->
-    raft_random:uniform_random_range(raft_config:election_low_timeout(),
-                                     raft_config:election_high_timeout()).
+    raft_random:uniform_random_range(raft_config:timeout(election_low),
+                                     raft_config:timeout(election_high)).
 
 leader() ->
-    raft_random:uniform_random_range(raft_config:leader_low_timeout(),
-                                     raft_config:leader_high_timeout()).
+    raft_random:uniform_random_range(raft_config:timeout(leader_low),
+                                     raft_config:timeout(leader_high)).

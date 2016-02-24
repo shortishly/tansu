@@ -14,10 +14,10 @@
 
 
 -module(raft_api_resource).
+-export([init/2]).
+-export([terminate/3]).
 -export([websocket_handle/3]).
 -export([websocket_info/3]).
-
--export([init/2]).
 
 init(Req, State) ->
     raft_connection:new(self(), outgoing(self())),
@@ -29,6 +29,9 @@ websocket_handle({text, Message}, Req, State) ->
 
 websocket_info({message, Message}, Req, State) ->
     {reply, {text, jsx:encode(Message)}, Req, State}.
+
+terminate(_Reason, _Req, _State) ->
+    raft_connection:delete(self()).
 
 outgoing(Recipient) ->
     fun(Message) ->

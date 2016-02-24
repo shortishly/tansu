@@ -153,23 +153,18 @@ outgoing(Recipient) ->
             ok
     end.
 
-
-%% if RPC request or response contains term > current_term, set
-%% current_term = term, convert to follower.
-%% follower({_, #{term := T}}, #{term := C, id := Id} = D0) when T > C ->
-%%    {next_state, follower, drop_votes(D0#{term => raft_ps:term(Id, T)})};
-
 %% If election timeout elapses without receiving AppendEntries RPC
 %% from current leader or granting vote to candidate: convert to
 %% candidate
 follower(call_election, #{term := T0, id := Id, commit_index := CI} = D0) ->
     T1 = raft_ps:increment(Id, T0),
     raft_rpc:request_vote(T1, Id, CI, CI),
-    D1 = D0#{term => T1,
-             voted_for => Id,
+    D1 = drop_votes(D0),
+    D2 = D1#{term => T1,
+             voted_for => raft_ps:voted_for(Id, Id),
              for => [Id],
              against => []},
-    {next_state, candidate, rerun_election(D1)};
+    {next_state, candidate, rerun_election(D2)};
 
 %% Drop obsolete vote responses from earlier terms
 follower({vote, #{term := Term}},
@@ -352,9 +347,11 @@ leader({log, Command}, #{id := Id, term := Term,
 %% currentTerm = T, convert to follower (§5.1)
 leader({_, #{term := Term}},
        #{id := Id, term := Current} = Data) when Term > Current ->
-    {next_state, follower, call_election(
-                             drop_votes(
-                               Data#{term := raft_ps:term(Id, Term)}))};
+    {next_state, follower, maps:without(
+                             [next_indexes],
+                             call_election(
+                               drop_votes(
+                                 Data#{term := raft_ps:term(Id, Term)})))};
 
 %% Reply false if term < currentTerm (§5.1)
 leader({append_entries, #{term := Term, leader := Leader}},

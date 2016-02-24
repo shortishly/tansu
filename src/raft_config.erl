@@ -15,11 +15,8 @@
 -module(raft_config).
 -export([acceptors/1]).
 -export([db_schema/0]).
--export([election_low_timeout/0]).
--export([election_high_timeout/0]).
--export([leader_low_timeout/0]).
--export([leader_high_timeout/0]).
 -export([port/1]).
+-export([timeout/1]).
 
 port(http) ->
     list_to_integer(
@@ -34,14 +31,11 @@ acceptors(http) ->
     100.
 
 
-election_low_timeout() ->
-    1500.
-
-election_high_timeout() ->
-    3000.
-
-leader_low_timeout() ->
-    500.
-
-leader_high_timeout() ->
+timeout(election_low) ->
+    1500;
+timeout(election_high) ->
+    3000;
+timeout(leader_low) ->
+    500;
+timeout(leader_high) ->
     1000.
