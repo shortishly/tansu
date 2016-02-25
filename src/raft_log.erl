@@ -19,6 +19,7 @@
 -export([last/0]).
 -export([read/1]).
 -export([term_for_index/1]).
+-export([trace/1]).
 -export([write/2]).
 
 -include("raft_log.hrl").
@@ -68,9 +69,6 @@ append_entries(PrevLogIndex, PrevLogTerm, Entries) ->
           () ->
               case {mnesia:last(?MODULE), mnesia:read(?MODULE, PrevLogIndex)} of
                   {'$end_of_table', []} ->
-                      {ok, append_entries(PrevLogIndex, Entries)};
-
-                  {_, []} ->
                       {ok, append_entries(PrevLogIndex, Entries)};
 
                   {_, [#?MODULE{term = PrevLogTerm}]} ->
@@ -138,3 +136,12 @@ term_for_index(Index) ->
 
 activity(F) ->
     mnesia:activity(transaction, F).
+
+
+trace(true) ->
+    recon_trace:calls({?MODULE, '_', '_'},
+                      {1000, 500},
+                      [{scope, local},
+                       {pid, all}]);
+trace(false) ->
+    recon_trace:clear().

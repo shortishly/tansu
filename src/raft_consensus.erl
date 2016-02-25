@@ -371,7 +371,7 @@ leader({log, Command}, #{id := Id, term := Term,
                                    raft_log:term_for_index(LastLogIndex-1),
                                    CI,
                                    [#{term => Term, command => Command}]),
-                                 A#{Follower => LastLogIndex};
+                                 A#{Follower => LastLogIndex+1};
 
                             (Follower, Index, A) ->
                                  A#{Follower => Index}
