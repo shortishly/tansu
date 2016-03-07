@@ -181,7 +181,9 @@ Using the server that has been elected as the leader, write a log
 entry as follows:
 
 ```erlang
-8> raft:log(#{a => 1}).
+8> raft:log(#{m => <<"maps">>, f => <<"new">>, a => []}).
+ok
+9> raft:log(#{m => <<"maps">>, f => <<"put">>, a => [<<"a">>, 1]}).
 ok
 ```
 
@@ -198,6 +200,7 @@ Note that the leader's state has also updated:
           last_applied => 1,
           next_indexes => #{<<"141b0896-032c-4c66-90ae-248a3a877ed0">> => 2,
             <<"edd9c936-ee5d-45f1-946c-fc3ed1cbf833">> => 2},
+          state_machine => #{<<"a">> => 1},
           term => 1442,
           timer => #Ref<0.0.1.3364>,
           voted_for => <<"61752590-95f0-4160-b10a-41b405d5210a">>}}
@@ -211,7 +214,8 @@ You can verify the state of the log on the leader by:
 
 ```erlang
 10> ets:i(raft_log).
-<1   > {raft_log,1,1414,#{a => 1}}
+<1   > {raft_log,1,125,#{a => [],f => <<"new">>,m => <<"maps">>}}
+<2   > {raft_log,2,241,#{a => [<<"a">>,1],f => <<"put">>,m => <<"maps">>}}
 EOT  (q)uit (p)Digits (k)ill /Regexp -->q
 ```
 
@@ -234,7 +238,8 @@ contains the same entry:
 
 ```erlang
 9> ets:i(raft_log).
-<1   > {raft_log,1,1414,#{a => 1}}
+<1   > {raft_log,1,125,#{a => [],f => <<"new">>,m => <<"maps">>}}
+<2   > {raft_log,2,241,#{a => [<<"a">>,1],f => <<"put">>,m => <<"maps">>}}
 EOT  (q)uit (p)Digits (k)ill /Regexp -->
 ```
 
