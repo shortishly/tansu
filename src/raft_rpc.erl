@@ -13,14 +13,16 @@
 %% limitations under the License.
 
 -module(raft_rpc).
+
 -export([append_entries/6]).
 -export([append_entries/7]).
 -export([demarshall/2]).
+-export([decode/1]).
+-export([encode/1]).
 -export([heartbeat/5]).
 -export([log/2]).
 -export([request_vote/4]).
 -export([vote/4]).
-
 
 
 request_vote(Term, Candidate, LastLogIndex, LastLogTerm) ->
@@ -123,5 +125,11 @@ demarshall(Pid, Message) ->
 
     end.
 
-decode(Message) ->
-    jsx:decode(Message, [return_maps, {labels, existing_atom}]).
+
+decode(<<Size:32, BERT:Size/bytes>>) ->
+    binary_to_term(BERT).
+
+
+encode(Term) ->
+    BERT = term_to_binary(Term),
+    <<(byte_size(BERT)):32, BERT/binary>>.

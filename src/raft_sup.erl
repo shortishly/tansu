@@ -19,12 +19,10 @@
 -export([start_link/0]).
 
 start_link() ->
-        supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-        {ok, {#{}, [child_spec(raft_consensus)]}}.
+    {ok, {#{}, [child_spec(raft_consensus)]}}.
 
 child_spec(Module) ->
-    #{id => Module,
-      restart => temporary,
-      start => {Module, start_link, []}}.
+    #{id => Module, start => {Module, start_link, []}}.

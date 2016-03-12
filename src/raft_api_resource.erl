@@ -12,23 +12,25 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
-
 -module(raft_api_resource).
+
+
 -export([init/2]).
 -export([terminate/3]).
 -export([websocket_handle/3]).
 -export([websocket_info/3]).
 
+
 init(Req, State) ->
     raft_connection:new(self(), outgoing(self())),
     {cowboy_websocket, Req, State}.
 
-websocket_handle({text, Message}, Req, State) ->
+websocket_handle({binary, Message}, Req, State) ->
     raft_rpc:demarshall(self(), Message),
     {ok, Req, State}.
 
 websocket_info({message, Message}, Req, State) ->
-    {reply, {text, jsx:encode(Message)}, Req, State}.
+    {reply, {binary, raft_rpc:encode(Message)}, Req, State}.
 
 terminate(_Reason, _Req, _State) ->
     raft_connection:delete(self()).

@@ -146,7 +146,7 @@ handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C} = Data) ->
             {stop, error, Data}
     end;
 
-handle_info({gun_ws, Peer, {text, Message}}, Name, Data) ->
+handle_info({gun_ws, Peer, {binary, Message}}, Name, Data) ->
     raft_rpc:demarshall(Peer, Message),
     {next_state, Name, Data}.
 
@@ -160,7 +160,7 @@ code_change(_OldVsn, State, Data, _Extra) ->
 outgoing(Recipient) ->
     fun
         (Message) ->
-            gun:ws_send(Recipient, {text, jsx:encode(Message)}),
+            gun:ws_send(Recipient, {binary, raft_rpc:encode(Message)}),
             ok
     end.
 
@@ -558,15 +558,12 @@ sm_apply(LastApplied, CommitIndex, State) ->
 
 sm_apply([H | T], undefined) ->
     #{command := #{m := M, f := F, a := A}} = raft_log:read(H),
-    sm_apply(T, apply(binary_to_atom(M), binary_to_atom(F), A));
+    sm_apply(T, apply(M, F, A));
 sm_apply([H | T], State) ->
     #{command := #{m := M, f := F, a := A}} = raft_log:read(H),
-    sm_apply(T, apply(binary_to_atom(M), binary_to_atom(F), A ++ [State]));
+    sm_apply(T, apply(M, F, A ++ [State]));
 sm_apply([], State) ->
     State.
-
-binary_to_atom(B) ->
-    list_to_atom(binary_to_list(B)).
 
 
 trace(false) ->
