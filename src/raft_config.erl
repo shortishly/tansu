@@ -19,12 +19,14 @@
 -export([timeout/1]).
 
 port(http) ->
-    list_to_integer(
-      raft:get_env(http_port, [os_env, app_env, {default, "80"}])).
+    any:to_integer(get_env(http_port, 80)).
 
 db_schema() ->
-    list_to_atom(
-      raft:get_env(db_schema, [os_env, app_env, {default, "ram"}])).
+    any:to_atom(get_env(db_schema, ram)).
+
+get_env(Key, Default) ->
+    raft:get_env(Key, [os_env, app_env, {default, Default}]).
+
 
 
 acceptors(http) ->

@@ -18,6 +18,7 @@ PROJECT_DESCRIPTION = Raft Consensus
 PROJECT_VERSION = 0.0.1
 
 DEPS = \
+	any \
 	cowboy \
 	crown \
 	gproc \
@@ -29,6 +30,7 @@ DEPS = \
 LOCAL_DEPS = \
 	mnesia
 
+dep_any = git https://github.com/shortishly/any.git master
 dep_cowboy = git https://github.com/ninenines/cowboy.git 2.0.0-pre.3
 dep_crown = git https://github.com/shortishly/crown.git master
 dep_rfc4122 = git https://github.com/shortishly/erlang-rfc4122.git master
