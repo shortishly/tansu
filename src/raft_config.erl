@@ -19,25 +19,26 @@
 -export([timeout/1]).
 
 port(http) ->
-    any:to_integer(get_env(http_port, 80)).
+    envy(to_integer, http_port, 80).
 
 db_schema() ->
-    any:to_atom(get_env(db_schema, ram)).
-
-get_env(Key, Default) ->
-    raft:get_env(Key, [os_env, app_env, {default, Default}]).
-
-
+    envy(to_atom, db_schema, ram).
 
 acceptors(http) ->
-    100.
-
+    envy(to_integer, http_acceptors, 100).
 
 timeout(election_low) ->
-    1500;
+    envy(to_integer, timeout_election_low, 1500);
 timeout(election_high) ->
-    3000;
+    envy(to_integer, timeout_election_high, 3000);
 timeout(leader_low) ->
-    500;
+    envy(to_integer, timeout_leader_low, 500);
 timeout(leader_high) ->
-    1000.
+    envy(to_integer, timeout_leader_high, 1000).
+
+envy(To, Name, Default) ->
+    envy:To(raft, Name, default(Default)).
+
+default(Default) ->
+    [os_env, app_env, {default, Default}].
+

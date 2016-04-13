@@ -13,6 +13,7 @@
 %% limitations under the License.
 
 -module(raft).
+
 -export([connect/1]).
 -export([get_env/2]).
 -export([log/1]).

@@ -87,7 +87,6 @@ send_event(Event) ->
 
 
 init([]) ->
-    raft_random:seed(),
     Id = raft_ps:id(),
     {ok, follower, call_election(voted_for(
                                    #{term => raft_ps:term(Id),

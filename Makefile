@@ -18,25 +18,37 @@ PROJECT_DESCRIPTION = Raft Consensus
 PROJECT_VERSION = 0.0.1
 
 DEPS = \
-	any \
 	cowboy \
 	crown \
+	envy \
 	gproc \
-	jsx \
 	gun \
+	jsx \
+	mdns \
 	recon \
 	rfc4122
 
 LOCAL_DEPS = \
+	crypto \
 	mnesia
 
-dep_any = git https://github.com/shortishly/any.git master
 dep_cowboy = git https://github.com/ninenines/cowboy.git 2.0.0-pre.3
 dep_crown = git https://github.com/shortishly/crown.git master
-dep_rfc4122 = git https://github.com/shortishly/erlang-rfc4122.git master
+dep_envy = git https://github.com/shortishly/envy.git master
+dep_mdns = git https://github.com/shortishly/mdns.git develop
+dep_rfc4122 = git https://github.com/shortishly/rfc4122.git master
 
 SHELL_OPTS = \
+	-boot start_sasl \
+	-config dev.config \
 	-mnesia dir db \
-	-s $(PROJECT)
+	-name $(PROJECT) \
+	-s $(PROJECT) \
+	-s rb \
+	-s sync \
+	-setcookie $(PROJECT)
+
+SHELL_DEPS = \
+	sync
 
 include erlang.mk
