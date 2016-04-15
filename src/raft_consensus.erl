@@ -16,10 +16,11 @@
 -behaviour(gen_fsm).
 
 %% API.
+-export([add_server/1]).
 -export([append_entries/5]).
 -export([append_entries/6]).
--export([connect/1]).
 -export([log/1]).
+-export([remove_server/1]).
 -export([request_vote/4]).
 -export([start/0]).
 -export([start_link/0]).
@@ -35,10 +36,15 @@
 -export([init/1]).
 -export([terminate/3]).
 
-%% states
+%% asynchronous
 -export([candidate/2]).
 -export([follower/2]).
 -export([leader/2]).
+
+%% synchronous
+-export([candidate/3]).
+-export([follower/3]).
+-export([leader/3]).
 
 
 start() ->
@@ -51,8 +57,11 @@ stop() ->
     gen_fsm:sync_send_all_state_event(?MODULE, stop).
 
 
-connect(URI) ->
-    send_all_state_event({connect, URI}).
+add_server(URI) ->
+    sync_send_event({add_server, URI}).
+
+remove_server(URI) ->
+    sync_send_event({remove_server, URI}).
 
 append_entries(Follower, Term, Success, PrevLogIndex, PrevLogTerm) ->
     send_event({append_entries, #{term => Term, follower => Follower,
@@ -85,6 +94,9 @@ send_all_state_event(Event) ->
 send_event(Event) ->
     gen_fsm:send_event(?MODULE, Event).
 
+sync_send_event(Event) ->
+    gen_fsm:sync_send_event(?MODULE, Event, infinity).
+
 
 init([]) ->
     Id = raft_ps:id(),
@@ -106,15 +118,8 @@ voted_for(#{id := Id} = Data) ->
     end.
 
 
-handle_event({connect, URI}, Name, #{connecting := Connecting} = Data) ->
-    case http_uri:parse(URI) of
-        {ok, {_, _, Host, Port, Path, _}} ->
-            {ok, Peer} = gun:open(Host, Port),
-            {next_state, Name, Data#{connecting := Connecting#{Peer => Path}}};
-
-        {error, _} = Error ->
-            {stop, Error, Data}
-    end.
+handle_event(_, _, Data) ->
+    {stop, error, Data}.
 
 
 handle_sync_event(stop, _From, _Name, Data) ->
@@ -135,11 +140,12 @@ handle_info({gun_up, Peer, _}, Name, #{connecting := Connecting} = Data) ->
             {stop, error, Data}
     end;
 
-handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C} = Data) ->
+handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{from := From}} = Data) ->
     case maps:find(Peer, C) of
         {ok, _} ->
             raft_connection:new(Peer, outgoing(Peer)),
-            {next_state, Name, Data#{connecting := maps:without([Peer], C)}};
+            gen_fsm:reply(From, ok),
+            {next_state, Name, maps:without([change], Data#{connecting := maps:without([Peer], C)})};
 
         error ->
             {stop, error, Data}
@@ -564,7 +570,6 @@ sm_apply([H | T], State) ->
 sm_apply([], State) ->
     State.
 
-
 trace(false) ->
     recon_trace:clear();
 trace(Fn) ->
@@ -572,3 +577,28 @@ trace(Fn) ->
                       {1000, 500},
                       [{scope, local},
                        {pid, all}]).
+
+
+candidate({add_server, _}, _, Data) ->
+    {reply, not_leader, candidate, Data};
+candidate({remove_server, _}, _, Data) ->
+    {reply, not_leader, candidate, Data}.
+
+
+follower({add_server, _}, _, Data) ->
+    {reply, not_leader, candidate, Data};
+follower({remove_server, _}, _, Data) ->
+    {reply, not_leader, candidate, Data}.
+
+
+leader({Change, _}, _, #{change := _} = Data) when Change == add_server orelse Change == remove_server ->
+    {reply, configuration_change_already_in_progress, leader, Data};
+leader({Change, URI}, From, #{connecting := Connecting} = Data) when Change == add_server orelse Change == remove_server ->
+    case http_uri:parse(URI) of
+        {ok, {_, _, Host, Port, Path, _}} ->
+            {ok, Peer} = gun:open(Host, Port),
+            {next_state, leader, Data#{connecting := Connecting#{Peer => Path}, change => #{type => Change, from => From, uri => URI}}};
+
+        {error, _} = Error ->
+            {reply, Error, leader, Data}
+    end.

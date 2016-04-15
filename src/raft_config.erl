@@ -14,15 +14,27 @@
 
 -module(raft_config).
 -export([acceptors/1]).
+-export([can/1]).
 -export([db_schema/0]).
+-export([environment/0]).
 -export([port/1]).
 -export([timeout/1]).
+
+can(advertise) ->
+    envy(to_boolean, can_advertise, true);
+can(discover) ->
+    envy(to_boolean, can_discover, true);
+can(mesh) ->
+    envy(to_boolean, can_mesh, true).
 
 port(http) ->
     envy(to_integer, http_port, 80).
 
 db_schema() ->
     envy(to_atom, db_schema, ram).
+
+environment() ->
+    envy(to_list, environment, "dev").
 
 acceptors(http) ->
     envy(to_integer, http_acceptors, 100).

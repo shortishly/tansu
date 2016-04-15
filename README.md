@@ -73,8 +73,8 @@ Each connection is stored as an ETS record in the `raft_connection`
 table. Connect the first server to the second and third servers:
 
 ```erlang
-raft:connect("http://localhost:8081/api").
-raft:connect("http://localhost:8082/api").
+raft_cluster:add("http://localhost:8081/api").
+raft_cluster:add("http://localhost:8082/api").
 ```
 
 Verify that the connections are in place by:
@@ -106,7 +106,7 @@ ID for server 1 above.
 Connect the second server to the third server:
 
 ```erlang
-raft:connect("http://localhost:8082/api").
+raft_cluster:add("http://localhost:8082/api").
 ```
 
 Verify that two connections are now in place:

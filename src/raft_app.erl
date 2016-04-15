@@ -27,6 +27,7 @@ start(_Type, _Args) ->
     try
         create_schema() andalso create_tables(),
         {ok, Sup} = raft_sup:start_link(),
+        start_advertiser(raft_tcp_advertiser),
         {ok, Sup, #{listeners => [start_http(http)]}}
     catch
         _:Reason ->
@@ -39,6 +40,10 @@ stop(#{listeners := Listeners}) ->
 stop(_State) ->
     ok.
 
+
+start_advertiser(Advertiser) ->
+    [mdns_discover_sup:start_child(Advertiser) || raft_config:can(discover)],
+    [mdns_advertise_sup:start_child(Advertiser) || raft_config:can(advertise)].
 
 start_http(Prefix) ->
     {ok, _} = cowboy:start_http(
