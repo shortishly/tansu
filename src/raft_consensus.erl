@@ -576,15 +576,16 @@ trace(Fn) ->
                        {pid, all}]).
 
 
+
+follower({add_server, _}, _, Data) ->
+    {reply, not_leader, follower, Data};
+follower({remove_server, _}, _, Data) ->
+    {reply, not_leader, follower, Data}.
+
+
 candidate({add_server, _}, _, Data) ->
     {reply, not_leader, candidate, Data};
 candidate({remove_server, _}, _, Data) ->
-    {reply, not_leader, candidate, Data}.
-
-
-follower({add_server, _}, _, Data) ->
-    {reply, not_leader, candidate, Data};
-follower({remove_server, _}, _, Data) ->
     {reply, not_leader, candidate, Data}.
 
 
