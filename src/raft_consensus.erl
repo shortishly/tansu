@@ -577,12 +577,34 @@ trace(Fn) ->
 
 
 
+follower({Change, _}, _, #{change := _} = Data) when Change == add_server orelse Change == remove_server ->
+    {reply, configuration_change_already_in_progress, follower, Data};
+follower({add_server = Change, URI}, From, #{connecting := Connecting, last_applied := 0, commit_index := 0} = Data) ->
+    case http_uri:parse(URI) of
+        {ok, {_, _, Host, Port, Path, _}} ->
+            {ok, Peer} = gun:open(Host, Port),
+            {next_state, follower, Data#{connecting := Connecting#{Peer => Path}, change => #{type => Change, from => From, uri => URI}}};
+
+        {error, _} = Error ->
+            {reply, Error, follower, Data}
+    end;
 follower({add_server, _}, _, Data) ->
     {reply, not_leader, follower, Data};
 follower({remove_server, _}, _, Data) ->
     {reply, not_leader, follower, Data}.
 
 
+candidate({Change, _}, _, #{change := _} = Data) when Change == add_server orelse Change == remove_server ->
+    {reply, configuration_change_already_in_progress, candidate, Data};
+candidate({add_server = Change, URI}, From, #{connecting := Connecting, last_applied := 0, commit_index := 0} = Data) ->
+    case http_uri:parse(URI) of
+        {ok, {_, _, Host, Port, Path, _}} ->
+            {ok, Peer} = gun:open(Host, Port),
+            {next_state, candidate, Data#{connecting := Connecting#{Peer => Path}, change => #{type => Change, from => From, uri => URI}}};
+
+        {error, _} = Error ->
+            {reply, Error, candidate, Data}
+    end;
 candidate({add_server, _}, _, Data) ->
     {reply, not_leader, candidate, Data};
 candidate({remove_server, _}, _, Data) ->
@@ -591,7 +613,7 @@ candidate({remove_server, _}, _, Data) ->
 
 leader({Change, _}, _, #{change := _} = Data) when Change == add_server orelse Change == remove_server ->
     {reply, configuration_change_already_in_progress, leader, Data};
-leader({Change, URI}, From, #{connecting := Connecting} = Data) when Change == add_server orelse Change == remove_server ->
+leader({add_server = Change, URI}, From, #{connecting := Connecting} = Data) ->
     case http_uri:parse(URI) of
         {ok, {_, _, Host, Port, Path, _}} ->
             {ok, Peer} = gun:open(Host, Port),
