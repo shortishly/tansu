@@ -88,9 +88,6 @@ vote(Elector, Term, Granted) ->
 log(Command) ->
     send_event({log, Command}).
 
-send_all_state_event(Event) ->
-    gen_fsm:send_all_state_event(?MODULE, Event).
-
 send_event(Event) ->
     gen_fsm:send_event(?MODULE, Event).
 
