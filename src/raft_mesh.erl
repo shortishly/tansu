@@ -35,12 +35,10 @@ stop() ->
 
 init([]) ->
     {ok, Hostname} = inet:gethostname(),
-    {ok, [{Name, _}]} = net_adm:names(),
     mdns:subscribe(advertisement),
     {ok, #{env => raft_config:environment(),
            id => any:to_list(raft_consensus:id()),
-           host => Hostname,
-           node => Name}}.
+           host => Hostname}}.
 
 
 handle_call(_, _, State) ->

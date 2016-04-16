@@ -54,7 +54,9 @@ broadcast(Pid, Message) ->
 
 
 send(Pid, Message) when is_pid(Pid) ->
-    outgoing(ets:lookup(?MODULE, Pid), Message).
+    outgoing(ets:lookup(?MODULE, Pid), Message);
+send(Id, Message) when is_binary(Id) ->
+    send(raft_connection_association:pid_for(Id), Message).
 
 size() ->
     ets:info(?MODULE, size).

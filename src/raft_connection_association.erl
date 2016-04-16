@@ -16,6 +16,7 @@
 -export([delete/1]).
 -export([ids/0]).
 -export([new_or_existing/2]).
+-export([pid_for/1]).
 -export([size/0]).
 
 -on_load(on_load/0).
@@ -44,6 +45,10 @@ new_or_existing(Id, Pid) ->
 
 delete(Id) ->
     ets:delete(?MODULE, Id).
+
+pid_for(Id) ->
+    [#?MODULE{pid = Pid}] = ets:lookup(?MODULE, Id),
+    Pid.
 
 ids() ->
     ordsets:from_list([Id || #?MODULE{id = Id} <- ets:match_object(?MODULE, r('_', '_'))]).

@@ -22,16 +22,15 @@ service() ->
 
 instances() ->
     {ok, Hostname} = inet:gethostname(),
-    {ok, [{Name, _}]} = net_adm:names(),
+    Id = any:to_list(raft_consensus:id()),
     [#{hostname => Hostname,
        port => raft_config:port(http),
-       instance => instance(Name, Hostname),
+       instance => instance(Id, Hostname),
        properties => #{host => net_adm:localhost(),
                        env => raft_config:environment(),
                        id => raft_consensus:id(),
                        la => raft_consensus:last_applied(),
                        ci => raft_consensus:commit_index(),
-                       node => Name,
                        vsn => raft:vsn()},
        priority => 0,
        weight => 0}].
