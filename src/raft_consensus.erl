@@ -106,10 +106,10 @@ send_event(Event) ->
     gen_fsm:send_event(?MODULE, Event).
 
 sync_send_all_state_event(Event) ->
-    gen_fsm:sync_send_all_state_event(?MODULE, Event, infinity).
+    gen_fsm:sync_send_all_state_event(?MODULE, Event, 5000).
 
 sync_send_event(Event) ->
-    gen_fsm:sync_send_event(?MODULE, Event, infinity).
+    gen_fsm:sync_send_event(?MODULE, Event, 5000).
 
 
 init([]) ->
