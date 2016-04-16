@@ -19,6 +19,9 @@
 -export([add_server/1]).
 -export([append_entries/5]).
 -export([append_entries/6]).
+-export([commit_index/0]).
+-export([id/0]).
+-export([last_applied/0]).
 -export([log/1]).
 -export([remove_server/1]).
 -export([request_vote/4]).
@@ -54,7 +57,7 @@ start_link() ->
     gen_fsm:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 stop() ->
-    gen_fsm:sync_send_all_state_event(?MODULE, stop).
+    sync_send_all_state_event(stop).
 
 
 add_server(URI) ->
@@ -62,6 +65,17 @@ add_server(URI) ->
 
 remove_server(URI) ->
     sync_send_event({remove_server, URI}).
+
+id() ->
+    sync_send_all_state_event(id).
+
+last_applied() ->
+    sync_send_all_state_event(last_applied).
+
+commit_index() ->
+    sync_send_all_state_event(commit_index).
+    
+    
 
 append_entries(Follower, Term, Success, PrevLogIndex, PrevLogTerm) ->
     send_event({append_entries, #{term => Term, follower => Follower,
@@ -91,6 +105,9 @@ log(Command) ->
 send_event(Event) ->
     gen_fsm:send_event(?MODULE, Event).
 
+sync_send_all_state_event(Event) ->
+    gen_fsm:sync_send_all_state_event(?MODULE, Event, infinity).
+
 sync_send_event(Event) ->
     gen_fsm:sync_send_event(?MODULE, Event, infinity).
 
@@ -119,6 +136,12 @@ handle_event(_, _, Data) ->
     {stop, error, Data}.
 
 
+handle_sync_event(last_applied, _From, Name, #{last_applied := LA} = Data) ->
+    {reply, LA, Name, Data};
+handle_sync_event(commit_index, _From, Name, #{commit_index := CI} = Data) ->
+    {reply, CI, Name, Data};
+handle_sync_event(id, _From, Name, #{id := Id} = Data) ->
+    {reply, Id, Name, Data};
 handle_sync_event(stop, _From, _Name, Data) ->
     {stop, normal, Data}.
 
@@ -140,7 +163,7 @@ handle_info({gun_up, Peer, _}, Name, #{connecting := Connecting} = Data) ->
 handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{from := From}} = Data) ->
     case maps:find(Peer, C) of
         {ok, _} ->
-            raft_connection:new(Peer, outgoing(Peer)),
+            raft_connection:new(Peer, outgoing(Peer), fun() -> gun:close(Peer) end),
             gen_fsm:reply(From, ok),
             {next_state, Name, maps:without([change], Data#{connecting := maps:without([Peer], C)})};
 

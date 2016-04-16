@@ -22,7 +22,7 @@
 
 
 init(Req, State) ->
-    raft_connection:new(self(), outgoing(self())),
+    raft_connection:new(self(), outgoing(self()), closer(self())),
     {cowboy_websocket, Req, State}.
 
 websocket_handle({binary, Message}, Req, State) ->
@@ -30,7 +30,10 @@ websocket_handle({binary, Message}, Req, State) ->
     {ok, Req, State}.
 
 websocket_info({message, Message}, Req, State) ->
-    {reply, {binary, raft_rpc:encode(Message)}, Req, State}.
+    {reply, {binary, raft_rpc:encode(Message)}, Req, State};
+
+websocket_info(close, Req, State) ->
+    {stop, Req, State}.
 
 terminate(_Reason, _Req, _State) ->
     raft_connection:delete(self()).
@@ -38,5 +41,11 @@ terminate(_Reason, _Req, _State) ->
 outgoing(Recipient) ->
     fun(Message) ->
             Recipient ! {message, Message},
+            ok
+    end.
+
+closer(Recipient) ->
+    fun() ->
+            Recipient ! close,
             ok
     end.

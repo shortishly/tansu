@@ -37,7 +37,10 @@ init([]) ->
     {ok, Hostname} = inet:gethostname(),
     {ok, [{Name, _}]} = net_adm:names(),
     mdns:subscribe(advertisement),
-    {ok, #{env => raft_config:environment(), host => Hostname, node => Name}}.
+    {ok, #{env => raft_config:environment(),
+           id => any:to_list(raft_consensus:id()),
+           host => Hostname,
+           node => Name}}.
 
 
 handle_call(_, _, State) ->
@@ -53,23 +56,24 @@ handle_info({_, {mdns, advertisement}, #{advertiser := raft_tcp_advertiser, ttl 
     {noreply, State};
 
 handle_info({_, {mdns, advertisement}, #{advertiser := raft_tcp_advertiser,
-                                         env := Env,
-                                         node := Node,
-                                         host := Host}},
-            #{env := Env,
-              host := Host,
-              node := Node} = State) ->
+                                         id := Id}},
+            #{id := Id} = State) ->
     %% don't mesh with ourselves
     {noreply, State};
 
 handle_info({_, {mdns, advertisement}, #{advertiser := raft_tcp_advertiser,
+                                         id := Id,
                                          env := Env,
                                          port := Port,
-                                         host := Host}},
-            #{env := Env} = State) ->
-    %% mesh with any node in that shares our enviromment
-    raft_cluster:add(uri(Host, Port)),
-    {noreply, State};
+                                         host := Host}}, #{env := Env} = State) ->
+    case lists:member(any:to_binary(Id), raft_connection_association:ids()) of
+        true ->
+            {noreply, State};
+        false ->
+            %% mesh with any node in that shares our enviromment
+            raft_cluster:add(uri(Host, Port)),
+            {noreply, State}
+    end;
 
 handle_info({_, {mdns, advertisement}, _}, State) ->
     %% ignore any other advertisements
