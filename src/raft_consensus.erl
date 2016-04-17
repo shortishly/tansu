@@ -123,6 +123,9 @@ voted_for(#{id := Id} = Data) ->
             Data#{voted_for => VotedFor}
     end.
 
+handle_event({ws_send, Recipient, Frame}, State, Data) ->
+    gun:ws_send(Recipient, Frame),
+    {next_state, State, Data};
 
 handle_event(_, _, Data) ->
     {stop, error, Data}.
@@ -155,7 +158,17 @@ handle_info({gun_up, Peer, _}, Name, #{connecting := Connecting} = Data) ->
 handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{}} = Data) ->
     case maps:find(Peer, C) of
         {ok, _} ->
-            raft_connection:new(Peer, outgoing(Peer), fun() -> gun:close(Peer) end),
+            raft_connection:new(
+              Peer,
+              fun
+                  (Message) ->
+                      gen_fsm:send_all_state_event(
+                        ?MODULE, {ws_send, Peer, {binary, raft_rpc:encode(Message)}})
+              end,
+              fun
+                  () ->
+                  gen_fsm:send_all_state_event(?MODULE, {ws_close, Peer})
+              end),
             {next_state, Name, maps:without([change], Data#{connecting := maps:without([Peer], C)})};
 
         error ->
@@ -172,13 +185,6 @@ terminate(_Reason, _State, _Data) ->
 
 code_change(_OldVsn, State, Data, _Extra) ->
     {ok, State, Data}.
-
-outgoing(Recipient) ->
-    fun
-        (Message) ->
-            gun:ws_send(Recipient, {binary, raft_rpc:encode(Message)}),
-            ok
-    end.
 
 
 follower({add_server, _}, #{change := _} = Data) ->
