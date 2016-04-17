@@ -26,8 +26,19 @@ init(Req, State) ->
     {cowboy_websocket, Req, State}.
 
 websocket_handle({binary, Message}, Req, State) ->
-    raft_rpc:demarshall(self(), Message),
-    {ok, Req, State}.
+    try
+        raft_rpc:demarshall(self(), Message),
+        {ok, Req, State}
+
+    catch Class:Reason ->
+            error_logger:info_report([{module, ?MODULE},
+                                      {line, ?LINE},
+                                      {class, Class},
+                                      {reason, Reason},
+                                      {req, Req},
+                                      {state, State}]),
+            {stop, Req, State}
+    end.
 
 websocket_info({message, Message}, Req, State) ->
     {reply, {binary, raft_rpc:encode(Message)}, Req, State};
