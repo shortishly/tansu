@@ -357,7 +357,12 @@ follower({request_vote, #{term := Term,
 follower({request_vote, #{term := T, candidate := Candidate}},
          #{id := Id, term := T, voted_for := _} = Data) ->
     raft_rpc:vote(Candidate, Id, T, false),
+    {next_state, follower, Data};
+
+%% an old vote for when we were a candidate
+follower({vote, #{granted := _}}, Data) ->
     {next_state, follower, Data}.
+
 
 
 

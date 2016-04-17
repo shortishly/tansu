@@ -36,11 +36,11 @@ websocket_info(close, Req, State) ->
     {stop, Req, State}.
 
 terminate(Reason, Req, State) ->
-    error_logger:error_report([{module, ?MODULE},
-                               {line, ?LINE},
-                               {reason, Reason},
-                               {req, Req},
-                               {state, State}]),
+    error_logger:info_report([{module, ?MODULE},
+                              {line, ?LINE},
+                              {reason, Reason},
+                              {req, Req},
+                              {state, State}]),
     raft_connection:delete(self()).
 
 outgoing(Recipient) ->
