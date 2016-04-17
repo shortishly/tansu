@@ -44,11 +44,6 @@
 -export([follower/2]).
 -export([leader/2]).
 
-%% synchronous
--export([candidate/3]).
--export([follower/3]).
--export([leader/3]).
-
 
 start() ->
     gen_fsm:start({local, ?MODULE}, ?MODULE, [], []).
@@ -61,10 +56,10 @@ stop() ->
 
 
 add_server(URI) ->
-    sync_send_event({add_server, URI}).
+    send_event({add_server, URI}).
 
 remove_server(URI) ->
-    sync_send_event({remove_server, URI}).
+    send_event({remove_server, URI}).
 
 id() ->
     sync_send_all_state_event(id).
@@ -107,9 +102,6 @@ send_event(Event) ->
 
 sync_send_all_state_event(Event) ->
     gen_fsm:sync_send_all_state_event(?MODULE, Event, 5000).
-
-sync_send_event(Event) ->
-    gen_fsm:sync_send_event(?MODULE, Event, 5000).
 
 
 init([]) ->
@@ -160,11 +152,10 @@ handle_info({gun_up, Peer, _}, Name, #{connecting := Connecting} = Data) ->
             {stop, error, Data}
     end;
 
-handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{from := From}} = Data) ->
+handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{}} = Data) ->
     case maps:find(Peer, C) of
         {ok, _} ->
             raft_connection:new(Peer, outgoing(Peer), fun() -> gun:close(Peer) end),
-            gen_fsm:reply(From, ok),
             {next_state, Name, maps:without([change], Data#{connecting := maps:without([Peer], C)})};
 
         error ->
@@ -188,6 +179,28 @@ outgoing(Recipient) ->
             gun:ws_send(Recipient, {binary, raft_rpc:encode(Message)}),
             ok
     end.
+
+
+follower({add_server, _}, #{change := _} = Data) ->
+    %% change already in progress
+    {next_state, follower, Data};
+follower({remove_server, _}, #{change := _} = Data) ->
+    %% change already in progress
+    {next_state, follower, Data};
+follower({add_server = Change, URI}, #{connecting := Connecting, last_applied := 0, commit_index := 0} = Data) ->
+    case http_uri:parse(URI) of
+        {ok, {_, _, Host, Port, Path, _}} ->
+            {ok, Peer} = gun:open(Host, Port),
+            monitor(process, Peer),
+            {next_state, follower, Data#{connecting := Connecting#{Peer => Path}, change => #{type => Change, uri => URI}}};
+
+        {error, _} ->
+            {next_state, follower, Data}
+    end;
+follower({add_server, _}, Data) ->
+    {next_state, follower, Data};
+follower({remove_server, _}, Data) ->
+    {next_state, follower, Data};
 
 %% If election timeout elapses without receiving AppendEntries RPC
 %% from current leader or granting vote to candidate: convert to
@@ -341,6 +354,29 @@ follower({request_vote, #{term := T, candidate := Candidate}},
     {next_state, follower, Data}.
 
 
+
+
+candidate({add_server, _}, #{change := _} = Data) ->
+    %% change already in progress
+    {next_state, candidate, Data};
+candidate({remove_server, _}, #{change := _} = Data) ->
+    %% change already in progress
+    {next_state, candidate, Data};
+candidate({add_server = Change, URI}, #{connecting := Connecting, last_applied := 0, commit_index := 0} = Data) ->
+    case http_uri:parse(URI) of
+        {ok, {_, _, Host, Port, Path, _}} ->
+            {ok, Peer} = gun:open(Host, Port),
+            monitor(process, Peer),
+            {next_state, candidate, Data#{connecting := Connecting#{Peer => Path}, change => #{type => Change, uri => URI}}};
+
+        {error, _} ->
+            {next_state, candidate, Data}
+    end;
+candidate({add_server, _}, Data) ->
+    {next_state, candidate, Data};
+candidate({remove_server, _}, Data) ->
+    {next_state, candidate, Data};
+
 candidate(rerun_election, #{term := T0, id := Id, commit_index := CI} = D0) ->
     T1 = raft_ps:increment(Id, T0),
     raft_rpc:request_vote(T1, Id, CI, CI),
@@ -423,6 +459,23 @@ drop_votes(#{id := Id} = Data) ->
 
 
 
+
+leader({add_server, _}, #{change := _} = Data) ->
+    %% change already in progress
+    {next_state, leader, Data};
+leader({remove_server, _}, #{change := _} = Data) ->
+    %% change already in progress
+    {next_state, leader, Data};
+leader({add_server = Change, URI}, #{connecting := Connecting} = Data) ->
+    case http_uri:parse(URI) of
+        {ok, {_, _, Host, Port, Path, _}} ->
+            {ok, Peer} = gun:open(Host, Port),
+            monitor(process, Peer),
+            {next_state, leader, Data#{connecting := Connecting#{Peer => Path}, change => #{type => Change, uri => URI}}};
+
+        {error, _} ->
+            {next_state, leader, Data}
+    end;
 
 leader({log, Command}, #{id := Id, term := Term,
                          commit_index := CI, next_indexes := NI} = Data) ->
@@ -600,48 +653,3 @@ trace(Fn) ->
 
 
 
-follower({Change, _}, _, #{change := _} = Data) when Change == add_server orelse Change == remove_server ->
-    {reply, configuration_change_already_in_progress, follower, Data};
-follower({add_server = Change, URI}, From, #{connecting := Connecting, last_applied := 0, commit_index := 0} = Data) ->
-    case http_uri:parse(URI) of
-        {ok, {_, _, Host, Port, Path, _}} ->
-            {ok, Peer} = gun:open(Host, Port),
-            {next_state, follower, Data#{connecting := Connecting#{Peer => Path}, change => #{type => Change, from => From, uri => URI}}};
-
-        {error, _} = Error ->
-            {reply, Error, follower, Data}
-    end;
-follower({add_server, _}, _, Data) ->
-    {reply, not_leader, follower, Data};
-follower({remove_server, _}, _, Data) ->
-    {reply, not_leader, follower, Data}.
-
-
-candidate({Change, _}, _, #{change := _} = Data) when Change == add_server orelse Change == remove_server ->
-    {reply, configuration_change_already_in_progress, candidate, Data};
-candidate({add_server = Change, URI}, From, #{connecting := Connecting, last_applied := 0, commit_index := 0} = Data) ->
-    case http_uri:parse(URI) of
-        {ok, {_, _, Host, Port, Path, _}} ->
-            {ok, Peer} = gun:open(Host, Port),
-            {next_state, candidate, Data#{connecting := Connecting#{Peer => Path}, change => #{type => Change, from => From, uri => URI}}};
-
-        {error, _} = Error ->
-            {reply, Error, candidate, Data}
-    end;
-candidate({add_server, _}, _, Data) ->
-    {reply, not_leader, candidate, Data};
-candidate({remove_server, _}, _, Data) ->
-    {reply, not_leader, candidate, Data}.
-
-
-leader({Change, _}, _, #{change := _} = Data) when Change == add_server orelse Change == remove_server ->
-    {reply, configuration_change_already_in_progress, leader, Data};
-leader({add_server = Change, URI}, From, #{connecting := Connecting} = Data) ->
-    case http_uri:parse(URI) of
-        {ok, {_, _, Host, Port, Path, _}} ->
-            {ok, Peer} = gun:open(Host, Port),
-            {next_state, leader, Data#{connecting := Connecting#{Peer => Path}, change => #{type => Change, from => From, uri => URI}}};
-
-        {error, _} = Error ->
-            {reply, Error, leader, Data}
-    end.
