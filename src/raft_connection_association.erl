@@ -35,7 +35,12 @@ new_or_existing(Id, Pid) ->
         [#?MODULE{pid = Pid}] ->
             true;
 
-        [#?MODULE{}] ->
+        [#?MODULE{pid = Existing}] ->
+            error_logger:error_report([{module, ?MODULE},
+                                       {line, ?LINE},
+                                       {id, Id},
+                                       {pid, Pid},
+                                       {existing, Existing}]),
             error(badarg, [Id, Pid]);
 
         [] ->
