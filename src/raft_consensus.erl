@@ -140,6 +140,20 @@ handle_sync_event(id, _From, Name, #{id := Id} = Data) ->
 handle_sync_event(stop, _From, _Name, Data) ->
     {stop, normal, Data}.
 
+handle_info({'DOWN', _, process, Peer, normal}, Name, #{connecting := Connecting, change := #{type := add_server, uri := URI}} = Data) ->
+    %% unable to connect to peer, possibly due to connectivity not being present
+    case maps:find(Peer, Connecting) of
+        {ok, _Path} ->
+            error_logger:info_report([{module, ?MODULE},
+                                      {line, ?LINE},
+                                      {uri, URI},
+                                      {type, add_server},
+                                      {reason, 'DOWN'}]),
+            {next_state, Name, maps:without([connection, change], Data)};
+
+        error ->
+            {stop, error, Data}
+    end;
 
 handle_info({gun_down, Peer, ws, _, _, _}, Name, Data) ->
     raft_connection:delete(Peer),
