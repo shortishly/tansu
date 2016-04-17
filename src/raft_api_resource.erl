@@ -22,8 +22,20 @@
 
 
 init(Req, State) ->
-    raft_connection:new(self(), outgoing(self()), closer(self())),
-    {cowboy_websocket, Req, State}.
+    try
+        raft_connection:new(self(), outgoing(self()), closer(self())),
+        {cowboy_websocket, Req, State}
+
+    catch Class:Reason ->
+            error_logger:info_report([{module, ?MODULE},
+                                      {line, ?LINE},
+                                      {class, Class},
+                                      {reason, Reason},
+                                      {req, Req},
+                                      {state, State}]),
+            {stop, Req, State}
+    end.
+
 
 websocket_handle({binary, Message}, Req, State) ->
     try
