@@ -149,7 +149,7 @@ handle_info({'DOWN', _, process, Peer, normal}, Name, #{connecting := Connecting
                                       {uri, URI},
                                       {type, add_server},
                                       {reason, 'DOWN'}]),
-            {next_state, Name, maps:without([connection, change], Data)};
+            {next_state, Name, maps:without([connecting, change], Data)};
 
         error ->
             {stop, error, Data}
