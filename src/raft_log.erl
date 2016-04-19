@@ -43,7 +43,7 @@ create_table() ->
             true;
 
         {aborted, Reason} ->
-            error(badarg, Reason)
+            error(badarg, [Reason])
     end.
 
 last() ->
@@ -101,7 +101,7 @@ read(Index) ->
                   [#?MODULE{term = T, command = C}] ->
                       #{term => T, command => C};
                   [] ->
-                      error(badarg, Index)
+                      error(badarg, [Index])
               end
       end).
 
@@ -130,7 +130,7 @@ term_for_index(Index) ->
                   [#?MODULE{term = Term}] ->
                       Term;
                   [] ->
-                      error(badarg, Index)
+                      error(badarg, [Index])
               end
       end).
 
