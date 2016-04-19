@@ -181,9 +181,9 @@ Using the server that has been elected as the leader, write a log
 entry as follows:
 
 ```erlang
-8> raft:log(#{m => <<"maps">>, f => <<"new">>, a => []}).
+8> raft:log(#{m => maps, f => new, a => []}).
 ok
-9> raft:log(#{m => <<"maps">>, f => <<"put">>, a => [<<"a">>, 1]}).
+9> raft:log(#{m => maps, f => put, a => [a, 1]}).
 ok
 ```
 

@@ -16,16 +16,12 @@
 
 -export([connect/1]).
 -export([log/1]).
--export([make/0]).
 -export([start/0]).
 -export([trace/1]).
 -export([vsn/0]).
 
 start() ->
     application:ensure_all_started(?MODULE).
-
-make() ->
-    make:all([load]).
 
 connect(Peer) ->
     raft_consensus:connect(Peer).

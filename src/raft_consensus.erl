@@ -444,11 +444,14 @@ candidate({request_vote, #{candidate := C}}, #{term := T, id := Id} = Data) ->
 
 candidate({vote, #{elector := Elector, term := Term, granted := true}},
           #{for := For, term := Term, id := Id, commit_index := CI,
-            last_applied := LA} = Data) ->
+            last_applied := LA, state_machine := SM} = Data) ->
 
     case {ordsets:add_element(Elector, For), raft_connection:size() + 1} of
         {Proposers, Nodes} when length(Proposers) > (Nodes / 2) ->
             raft_rpc:heartbeat(Term, Id, LA, raft_log:term_for_index(LA), CI),
+
+            (SM == undefined) andalso log(#{m => raft_sm, f => new}),
+            log(#{m => raft_sm, f => system, a => [elected, #{id => Id, proposers => Proposers, term => Term}]}),
             {next_state, leader,
              end_of_term(
                Data#{for => Proposers,
@@ -660,11 +663,23 @@ sm_apply(LastApplied, CommitIndex, State) ->
     sm_apply(lists:seq(LastApplied, CommitIndex), State).
 
 sm_apply([H | T], undefined) ->
-    #{command := #{m := M, f := F, a := A}} = raft_log:read(H),
-    sm_apply(T, apply(M, F, A));
+    case raft_log:read(H) of
+        #{command := #{m := M, f := F, a := A}} ->
+            sm_apply(T, apply(M, F, A));
+
+        #{command := #{m := M, f := F}} ->
+            sm_apply(T, apply(M, F, []))
+    end;
+
 sm_apply([H | T], State) ->
-    #{command := #{m := M, f := F, a := A}} = raft_log:read(H),
-    sm_apply(T, apply(M, F, A ++ [State]));
+    case raft_log:read(H) of
+        #{command := #{m := M, f := F, a := A}} ->
+            sm_apply(T, apply(M, F, A ++ [State]));
+
+        #{command := #{m := M, f := F}} ->
+            sm_apply(T, apply(M, F, [State]))
+    end;
+
 sm_apply([], State) ->
     State.
 
