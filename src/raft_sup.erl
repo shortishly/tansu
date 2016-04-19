@@ -22,7 +22,23 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-    {ok, {#{}, [child_spec(raft_consensus)]}}.
+    {ok, {#{}, [worker(raft_consensus) | mesh()]}}.
 
-child_spec(Module) ->
-    #{id => Module, start => {Module, start_link, []}}.
+mesh() ->
+    [worker(raft_mesh) || raft_config:can(mesh)].
+
+
+worker(Module) ->
+    worker(Module, transient).
+
+worker(Module, Restart) ->
+    worker(Module, Restart, []).
+
+worker(Module, Restart, Parameters) ->
+    worker(Module, Module, Restart, Parameters).
+
+worker(Id, Module, Restart, Parameters) ->
+    #{id => Id,
+      start => {Module, start_link, Parameters},
+      restart => Restart,
+      shutdown => 5000}.

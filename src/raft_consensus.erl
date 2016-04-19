@@ -16,10 +16,14 @@
 -behaviour(gen_fsm).
 
 %% API.
+-export([add_server/1]).
 -export([append_entries/5]).
 -export([append_entries/6]).
--export([connect/1]).
+-export([commit_index/0]).
+-export([id/0]).
+-export([last_applied/0]).
 -export([log/1]).
+-export([remove_server/1]).
 -export([request_vote/4]).
 -export([start/0]).
 -export([start_link/0]).
@@ -35,7 +39,7 @@
 -export([init/1]).
 -export([terminate/3]).
 
-%% states
+%% asynchronous
 -export([candidate/2]).
 -export([follower/2]).
 -export([leader/2]).
@@ -48,11 +52,25 @@ start_link() ->
     gen_fsm:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 stop() ->
-    gen_fsm:sync_send_all_state_event(?MODULE, stop).
+    sync_send_all_state_event(stop).
 
 
-connect(URI) ->
-    send_all_state_event({connect, URI}).
+add_server(URI) ->
+    send_event({add_server, URI}).
+
+remove_server(URI) ->
+    send_event({remove_server, URI}).
+
+id() ->
+    sync_send_all_state_event(id).
+
+last_applied() ->
+    sync_send_all_state_event(last_applied).
+
+commit_index() ->
+    sync_send_all_state_event(commit_index).
+    
+    
 
 append_entries(Follower, Term, Success, PrevLogIndex, PrevLogTerm) ->
     send_event({append_entries, #{term => Term, follower => Follower,
@@ -79,11 +97,11 @@ vote(Elector, Term, Granted) ->
 log(Command) ->
     send_event({log, Command}).
 
-send_all_state_event(Event) ->
-    gen_fsm:send_all_state_event(?MODULE, Event).
-
 send_event(Event) ->
     gen_fsm:send_event(?MODULE, Event).
+
+sync_send_all_state_event(Event) ->
+    gen_fsm:sync_send_all_state_event(?MODULE, Event, 5000).
 
 
 init([]) ->
@@ -105,21 +123,37 @@ voted_for(#{id := Id} = Data) ->
             Data#{voted_for => VotedFor}
     end.
 
+handle_event({ws_send, Recipient, Frame}, State, Data) ->
+    gun:ws_send(Recipient, Frame),
+    {next_state, State, Data};
 
-handle_event({connect, URI}, Name, #{connecting := Connecting} = Data) ->
-    case http_uri:parse(URI) of
-        {ok, {_, _, Host, Port, Path, _}} ->
-            {ok, Peer} = gun:open(Host, Port),
-            {next_state, Name, Data#{connecting := Connecting#{Peer => Path}}};
-
-        {error, _} = Error ->
-            {stop, Error, Data}
-    end.
+handle_event(_, _, Data) ->
+    {stop, error, Data}.
 
 
+handle_sync_event(last_applied, _From, Name, #{last_applied := LA} = Data) ->
+    {reply, LA, Name, Data};
+handle_sync_event(commit_index, _From, Name, #{commit_index := CI} = Data) ->
+    {reply, CI, Name, Data};
+handle_sync_event(id, _From, Name, #{id := Id} = Data) ->
+    {reply, Id, Name, Data};
 handle_sync_event(stop, _From, _Name, Data) ->
     {stop, normal, Data}.
 
+handle_info({'DOWN', _, process, Peer, normal}, Name, #{connecting := Connecting, change := #{type := add_server, uri := URI}} = Data) ->
+    %% unable to connect to peer, possibly due to connectivity not being present
+    case maps:find(Peer, Connecting) of
+        {ok, _Path} ->
+            error_logger:info_report([{module, ?MODULE},
+                                      {line, ?LINE},
+                                      {uri, URI},
+                                      {type, add_server},
+                                      {reason, 'DOWN'}]),
+            {next_state, Name, maps:without([connecting, change], Data)};
+
+        error ->
+            {stop, error, Data}
+    end;
 
 handle_info({gun_down, Peer, ws, _, _, _}, Name, Data) ->
     raft_connection:delete(Peer),
@@ -135,11 +169,21 @@ handle_info({gun_up, Peer, _}, Name, #{connecting := Connecting} = Data) ->
             {stop, error, Data}
     end;
 
-handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C} = Data) ->
+handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{}} = Data) ->
     case maps:find(Peer, C) of
         {ok, _} ->
-            raft_connection:new(Peer, outgoing(Peer)),
-            {next_state, Name, Data#{connecting := maps:without([Peer], C)}};
+            raft_connection:new(
+              Peer,
+              fun
+                  (Message) ->
+                      gen_fsm:send_all_state_event(
+                        ?MODULE, {ws_send, Peer, {binary, raft_rpc:encode(Message)}})
+              end,
+              fun
+                  () ->
+                  gen_fsm:send_all_state_event(?MODULE, {ws_close, Peer})
+              end),
+            {next_state, Name, maps:without([change], Data#{connecting := maps:without([Peer], C)})};
 
         error ->
             {stop, error, Data}
@@ -156,12 +200,27 @@ terminate(_Reason, _State, _Data) ->
 code_change(_OldVsn, State, Data, _Extra) ->
     {ok, State, Data}.
 
-outgoing(Recipient) ->
-    fun
-        (Message) ->
-            gun:ws_send(Recipient, {binary, raft_rpc:encode(Message)}),
-            ok
-    end.
+
+follower({add_server, _}, #{change := _} = Data) ->
+    %% change already in progress
+    {next_state, follower, Data};
+follower({remove_server, _}, #{change := _} = Data) ->
+    %% change already in progress
+    {next_state, follower, Data};
+follower({add_server = Change, URI}, #{connecting := Connecting, last_applied := 0, commit_index := 0} = Data) ->
+    case http_uri:parse(URI) of
+        {ok, {_, _, Host, Port, Path, _}} ->
+            {ok, Peer} = gun:open(Host, Port),
+            monitor(process, Peer),
+            {next_state, follower, Data#{connecting := Connecting#{Peer => Path}, change => #{type => Change, uri => URI}}};
+
+        {error, _} ->
+            {next_state, follower, Data}
+    end;
+follower({add_server, _}, Data) ->
+    {next_state, follower, Data};
+follower({remove_server, _}, Data) ->
+    {next_state, follower, Data};
 
 %% If election timeout elapses without receiving AppendEntries RPC
 %% from current leader or granting vote to candidate: convert to
@@ -312,8 +371,36 @@ follower({request_vote, #{term := Term,
 follower({request_vote, #{term := T, candidate := Candidate}},
          #{id := Id, term := T, voted_for := _} = Data) ->
     raft_rpc:vote(Candidate, Id, T, false),
+    {next_state, follower, Data};
+
+%% an old vote for when we were a candidate
+follower({vote, #{granted := _}}, Data) ->
     {next_state, follower, Data}.
 
+
+
+
+
+candidate({add_server, _}, #{change := _} = Data) ->
+    %% change already in progress
+    {next_state, candidate, Data};
+candidate({remove_server, _}, #{change := _} = Data) ->
+    %% change already in progress
+    {next_state, candidate, Data};
+candidate({add_server = Change, URI}, #{connecting := Connecting, last_applied := 0, commit_index := 0} = Data) ->
+    case http_uri:parse(URI) of
+        {ok, {_, _, Host, Port, Path, _}} ->
+            {ok, Peer} = gun:open(Host, Port),
+            monitor(process, Peer),
+            {next_state, candidate, Data#{connecting := Connecting#{Peer => Path}, change => #{type => Change, uri => URI}}};
+
+        {error, _} ->
+            {next_state, candidate, Data}
+    end;
+candidate({add_server, _}, Data) ->
+    {next_state, candidate, Data};
+candidate({remove_server, _}, Data) ->
+    {next_state, candidate, Data};
 
 candidate(rerun_election, #{term := T0, id := Id, commit_index := CI} = D0) ->
     T1 = raft_ps:increment(Id, T0),
@@ -357,11 +444,14 @@ candidate({request_vote, #{candidate := C}}, #{term := T, id := Id} = Data) ->
 
 candidate({vote, #{elector := Elector, term := Term, granted := true}},
           #{for := For, term := Term, id := Id, commit_index := CI,
-            last_applied := LA} = Data) ->
+            last_applied := LA, state_machine := SM} = Data) ->
 
     case {ordsets:add_element(Elector, For), raft_connection:size() + 1} of
         {Proposers, Nodes} when length(Proposers) > (Nodes / 2) ->
             raft_rpc:heartbeat(Term, Id, LA, raft_log:term_for_index(LA), CI),
+
+            (SM == undefined) andalso log(#{m => raft_sm, f => new}),
+            log(#{m => raft_sm, f => system, a => [elected, #{id => Id, proposers => Proposers, term => Term}]}),
             {next_state, leader,
              end_of_term(
                Data#{for => Proposers,
@@ -397,6 +487,23 @@ drop_votes(#{id := Id} = Data) ->
 
 
 
+
+leader({add_server, _}, #{change := _} = Data) ->
+    %% change already in progress
+    {next_state, leader, Data};
+leader({remove_server, _}, #{change := _} = Data) ->
+    %% change already in progress
+    {next_state, leader, Data};
+leader({add_server = Change, URI}, #{connecting := Connecting} = Data) ->
+    case http_uri:parse(URI) of
+        {ok, {_, _, Host, Port, Path, _}} ->
+            {ok, Peer} = gun:open(Host, Port),
+            monitor(process, Peer),
+            {next_state, leader, Data#{connecting := Connecting#{Peer => Path}, change => #{type => Change, uri => URI}}};
+
+        {error, _} ->
+            {next_state, leader, Data}
+    end;
 
 leader({log, Command}, #{id := Id, term := Term,
                          commit_index := CI, next_indexes := NI} = Data) ->
@@ -556,14 +663,25 @@ sm_apply(LastApplied, CommitIndex, State) ->
     sm_apply(lists:seq(LastApplied, CommitIndex), State).
 
 sm_apply([H | T], undefined) ->
-    #{command := #{m := M, f := F, a := A}} = raft_log:read(H),
-    sm_apply(T, apply(M, F, A));
+    case raft_log:read(H) of
+        #{command := #{m := M, f := F, a := A}} ->
+            sm_apply(T, apply(M, F, A));
+
+        #{command := #{m := M, f := F}} ->
+            sm_apply(T, apply(M, F, []))
+    end;
+
 sm_apply([H | T], State) ->
-    #{command := #{m := M, f := F, a := A}} = raft_log:read(H),
-    sm_apply(T, apply(M, F, A ++ [State]));
+    case raft_log:read(H) of
+        #{command := #{m := M, f := F, a := A}} ->
+            sm_apply(T, apply(M, F, A ++ [State]));
+
+        #{command := #{m := M, f := F}} ->
+            sm_apply(T, apply(M, F, [State]))
+    end;
+
 sm_apply([], State) ->
     State.
-
 
 trace(false) ->
     recon_trace:clear();
@@ -572,3 +690,6 @@ trace(Fn) ->
                       {1000, 500},
                       [{scope, local},
                        {pid, all}]).
+
+
+

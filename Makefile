@@ -35,7 +35,7 @@ LOCAL_DEPS = \
 dep_cowboy = git https://github.com/ninenines/cowboy.git 2.0.0-pre.3
 dep_crown = git https://github.com/shortishly/crown.git master
 dep_envy = git https://github.com/shortishly/envy.git master
-dep_mdns = git https://github.com/shortishly/mdns.git develop
+dep_mdns = git https://github.com/shortishly/mdns.git master
 dep_rfc4122 = git https://github.com/shortishly/rfc4122.git master
 
 SHELL_OPTS = \

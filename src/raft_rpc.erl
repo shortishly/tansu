@@ -85,14 +85,14 @@ demarshall(Pid, Message) ->
                             last_log_index := LastLogIndex,
                             last_log_term := LastLogTerm}} ->
 
-            raft_connection:associate(Pid, Candidate),
+            raft_connection_association:new_or_existing(Candidate, Pid),
             raft_consensus:request_vote(
               Term, Candidate, LastLogIndex, LastLogTerm);
 
         #{vote := #{elector := Elector,
                     term := Term,
                     granted := Granted}} ->
-            raft_connection:associate(Pid, Elector),
+            raft_connection_association:new_or_existing(Elector, Pid),
             raft_consensus:vote(Elector, Term, Granted);
 
         #{append_entries := #{term := LeaderTerm,
@@ -101,7 +101,7 @@ demarshall(Pid, Message) ->
                               prev_log_term := PrevLogTerm,
                               entries := Entries,
                               leader_commit := LeaderCommitIndex}} ->
-            raft_connection:associate(Pid, Leader),
+            raft_connection_association:new_or_existing(Leader, Pid),
             raft_consensus:append_entries(
               LeaderTerm,
               Leader,
@@ -116,7 +116,7 @@ demarshall(Pid, Message) ->
                               prev_log_term := PrevLogTerm,
                               follower := Follower,
                               success := Success}} ->
-            raft_connection:associate(Pid, Follower),
+            raft_connection_association:new_or_existing(Follower, Pid),
             raft_consensus:append_entries(
               Follower, Term, Success, PrevLogIndex, PrevLogTerm);
 

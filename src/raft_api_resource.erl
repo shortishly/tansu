@@ -22,21 +22,58 @@
 
 
 init(Req, State) ->
-    raft_connection:new(self(), outgoing(self())),
-    {cowboy_websocket, Req, State}.
+    try
+        raft_connection:new(self(), outgoing(self()), closer(self())),
+        {cowboy_websocket, Req, State}
+
+    catch Class:Reason ->
+            error_logger:info_report([{module, ?MODULE},
+                                      {line, ?LINE},
+                                      {class, Class},
+                                      {reason, Reason},
+                                      {req, Req},
+                                      {state, State}]),
+            {stop, Req, State}
+    end.
+
 
 websocket_handle({binary, Message}, Req, State) ->
-    raft_rpc:demarshall(self(), Message),
-    {ok, Req, State}.
+    try
+        raft_rpc:demarshall(self(), Message),
+        {ok, Req, State}
+
+    catch Class:Reason ->
+            error_logger:info_report([{module, ?MODULE},
+                                      {line, ?LINE},
+                                      {class, Class},
+                                      {reason, Reason},
+                                      {req, Req},
+                                      {state, State}]),
+            {stop, Req, State}
+    end.
 
 websocket_info({message, Message}, Req, State) ->
-    {reply, {binary, raft_rpc:encode(Message)}, Req, State}.
+    {reply, {binary, raft_rpc:encode(Message)}, Req, State};
 
-terminate(_Reason, _Req, _State) ->
+websocket_info(close, Req, State) ->
+    {stop, Req, State}.
+
+terminate(Reason, Req, State) ->
+    error_logger:info_report([{module, ?MODULE},
+                              {line, ?LINE},
+                              {reason, Reason},
+                              {req, Req},
+                              {state, State}]),
     raft_connection:delete(self()).
 
 outgoing(Recipient) ->
     fun(Message) ->
             Recipient ! {message, Message},
+            ok
+    end.
+
+closer(Recipient) ->
+    fun() ->
+            Recipient ! close,
             ok
     end.

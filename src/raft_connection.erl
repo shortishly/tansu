@@ -13,11 +13,10 @@
 %% limitations under the License.
 
 -module(raft_connection).
--export([associate/2]).
 -export([broadcast/1]).
+-export([close/1]).
 -export([delete/1]).
--export([ids/0]).
--export([new/2]).
+-export([new/3]).
 -export([send/2]).
 -export([size/0]).
 
@@ -25,28 +24,24 @@
 
 -record(?MODULE, {
            pid :: pid(),
-           id,
-           sender
+           sender :: fun(),
+           closer :: fun()
           }).
 
 on_load() ->
     crown_table:reuse(?MODULE, ordered_set).
 
 
-new(Pid, Sender) ->
-    ets:insert_new(?MODULE, r(Pid, undefined, Sender)) orelse
-        error(badarg, [Pid, Sender]).
+new(Pid, Sender, Closer) ->
+    ets:insert_new(?MODULE, r(Pid, Sender, Closer)) orelse
+        error(badarg, [Pid, Sender, Closer]).
 
 delete(Pid) ->
     ets:delete(?MODULE, Pid).
 
-associate(Pid, Id) ->
-    ets:update_element(?MODULE, Pid, {#?MODULE.id, Id}) orelse
-        error(badarg, [Pid, Id]).
-
-ids() ->
-    [Id || #?MODULE{id = Id} <- ets:match_object(?MODULE, r('_', '_', '_'))].
-
+close(Pid) ->
+    [#?MODULE{closer = Closer}] = ets:lookup(?MODULE, Pid),
+    Closer().
 
 broadcast(Message) ->
     broadcast(ets:first(?MODULE), Message).
@@ -60,8 +55,8 @@ broadcast(Pid, Message) ->
 
 send(Pid, Message) when is_pid(Pid) ->
     outgoing(ets:lookup(?MODULE, Pid), Message);
-send(Id, Message) ->
-    outgoing(ets:match_object(?MODULE, r('_', Id, '_')), Message).
+send(Id, Message) when is_binary(Id) ->
+    send(raft_connection_association:pid_for(Id), Message).
 
 size() ->
     ets:info(?MODULE, size).
@@ -74,5 +69,5 @@ outgoing(Matches, Message) ->
       end,
       Matches).
 
-r(Pid, Id, Sender) ->
-    #?MODULE{pid = Pid, id = Id, sender = Sender}.
+r(Pid, Sender, Closer) ->
+    #?MODULE{pid = Pid, sender = Sender, closer = Closer}.
