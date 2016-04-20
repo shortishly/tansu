@@ -18,7 +18,7 @@
 %% API.
 -export([add_connection/3]).
 -export([add_server/1]).
--export([append_entries/5]).
+-export([append_entries_response/5]).
 -export([append_entries/6]).
 -export([commit_index/0]).
 -export([demarshall/2]).
@@ -81,11 +81,11 @@ commit_index() ->
     
     
 
-append_entries(Follower, Term, Success, PrevLogIndex, PrevLogTerm) ->
-    send_event({append_entries, #{term => Term, follower => Follower,
-                                  prev_log_index => PrevLogIndex,
-                                  prev_log_term => PrevLogTerm,
-                                  success => Success}}).
+append_entries_response(Follower, Term, Success, PrevLogIndex, PrevLogTerm) ->
+    send_event({append_entries_response, #{term => Term, follower => Follower,
+                                           prev_log_index => PrevLogIndex,
+                                           prev_log_term => PrevLogTerm,
+                                           success => Success}}).
 
 append_entries(LeaderTerm, Leader, LastApplied, PrevLogTerm, Entries,
                LeaderCommitIndex) ->
@@ -669,7 +669,7 @@ leader({log, Command}, #{id := Id, term := Term,
 leader({_, #{term := Term}},
        #{id := Id, term := Current} = Data) when Term > Current ->
     {next_state, follower, maps:without(
-                             [next_indexes],
+                             [match_indexes, next_indexes],
                              call_election(
                                drop_votes(
                                  Data#{term := raft_ps:term(Id, Term)})))};
@@ -687,17 +687,17 @@ leader({append_entries, #{term := Term, leader := Leader}},
       Data),
     {next_state, leader, Data};
 
-leader({append_entries, #{success := false,
-                          follower := Follower}},
+leader({append_entries_response, #{success := false,
+                                   follower := Follower}},
        #{next_indexes := NextIndexes} = Data) ->
     case NextIndexes of
         #{Follower := Index} when Index > 2 ->
             {next_state, leader, Data#{next_indexes := NextIndexes#{Follower := Index - 1}}}
     end;
 
-leader({append_entries, #{success := true,
-                          prev_log_index := PrevLogIndex,
-                          follower := Follower}},
+leader({append_entries_response, #{success := true,
+                                   prev_log_index := PrevLogIndex,
+                                   follower := Follower}},
        #{match_indexes := Match,
          next_indexes := Next,
          last_applied := LastApplied,
@@ -899,19 +899,19 @@ do_demarshall(Pid,
               Data);
 
 do_demarshall(Pid,
-        #{append_entries_response := #{term := Term,
-                                       leader := _Leader,
-                                       prev_log_index := PrevLogIndex,
-                                       prev_log_term := PrevLogTerm,
-                                       follower := Follower,
-                                       success := Success}},
+              #{append_entries_response := #{term := Term,
+                                             leader := _Leader,
+                                             prev_log_index := PrevLogIndex,
+                                             prev_log_term := PrevLogTerm,
+                                             follower := Follower,
+                                             success := Success}},
               Data) ->
     eval_or_drop_duplicate_connection(
       Follower,
       Pid,
       fun
           () ->
-              append_entries(
+              append_entries_response(
                 Follower,
                 Term,
                 Success,
