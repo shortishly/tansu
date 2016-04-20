@@ -139,7 +139,7 @@ voted_for(#{id := Id} = Data) ->
     end.
 
 handle_event({demarshall, Pid, Message}, State, Data) ->
-    {next_state, State, do_demarshall(Pid, raft_rpc:decode(Message), Data)};
+    {next_state, State, do_demarshall(Pid, Message, Data)};
 
 handle_event({add_connection, Peer, Sender, Closer}, State, Data) ->
     {next_state, State, do_add_connection(Peer, Sender, Closer, Data)};

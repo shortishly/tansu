@@ -31,7 +31,7 @@ websocket_handle({binary, Message}, Req, State) ->
     {ok, Req, State}.
 
 websocket_info({message, Message}, Req, State) ->
-    {reply, {binary, Message}, Req, State};
+    {reply, {binary, raft_rpc:encode(Message)}, Req, State};
 
 websocket_info(close, Req, State) ->
     {stop, Req, State}.
@@ -45,7 +45,7 @@ terminate(Reason, Req, State) ->
 
 outgoing(Recipient) ->
     fun(Message) ->
-            Recipient ! {message, raft_rpc:encode(Message)},
+            Recipient ! {message, Message},
             ok
     end.
 
