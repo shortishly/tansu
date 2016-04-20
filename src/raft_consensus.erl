@@ -837,6 +837,8 @@ sm_apply([], State) ->
 
 trace(false) ->
     recon_trace:clear();
+trace(true) ->
+    trace('_');    
 trace(Fn) ->
     recon_trace:calls({?MODULE, Fn, '_'},
                       {1000, 500},
