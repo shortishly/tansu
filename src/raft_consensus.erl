@@ -911,8 +911,9 @@ broadcast(Message, #{connections := Connections}) ->
       ok,
       Connections).
               
-send(Message, Recipient, #{connections := Connections}) ->
-    #{Recipient := #{sender := Sender}} = Connections,
+send(Message, Recipient, #{associations := Associations, connections := Connections}) ->
+    #{Recipient := Pid} = Associations,
+    #{Pid := #{sender := Sender}} = Connections,
     Sender(Message).
 
 do_add_connection(Peer, Sender, Closer, #{connections := Connections} = Data) ->
