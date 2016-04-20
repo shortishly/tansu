@@ -22,11 +22,7 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-    {ok, {#{}, [worker(raft_consensus) | mesh()]}}.
-
-mesh() ->
-    [worker(raft_mesh) || raft_config:can(mesh)].
-
+    {ok, {#{}, [worker(raft_consensus)]}}.
 
 worker(Module) ->
     worker(Module, transient).
