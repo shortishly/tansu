@@ -193,10 +193,10 @@ handle_info({_,
             Data) ->
     send_all_state_event(
       {mdns_advertisement, #{id => any:to_binary(Id),
-                             env => any:to_binary(Env),
+                             env => Env,
                              port => Port,
                              ttl => TTL,
-                             host => any:to_binary(Host)}}),
+                             host => Host}}),
     {next_state, Name, Data};
 
 handle_info({_,
