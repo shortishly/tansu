@@ -212,6 +212,7 @@ handle_info({'DOWN', _, process, Peer, normal}, Name, #{connecting := Connecting
     %% unable to connect to peer, possibly due to connectivity not being present
     case maps:find(Peer, Connecting) of
         {ok, _Path} ->
+            %% log as an issue connecting to the remote node
             error_logger:info_report([{module, ?MODULE},
                                       {line, ?LINE},
                                       {uri, URI},
@@ -221,6 +222,33 @@ handle_info({'DOWN', _, process, Peer, normal}, Name, #{connecting := Connecting
 
         error ->
             {stop, error, Data}
+    end;
+
+handle_info({'DOWN', _, process, Pid, normal}, leader, #{connections := Connections,
+                                                         associations := Associations,
+                                                         match_indexes := MatchIndexes,
+                                                         next_indexes := NextIndexes} = Data) ->
+    %% lost connectivity to a node
+    case Connections of
+        #{Pid := #{association := Association}} ->
+            {next_state, leader, Data#{connections := maps:without([Pid], Connections),
+                                       match_indexes := maps:without([Association], MatchIndexes),
+                                       next_indexes := maps:without([Association], NextIndexes),
+                                       associations := maps:without([Association], Associations)}};
+
+        #{Pid := _} ->
+            {next_state, leader, Data#{connections := maps:without([Pid], Connections)}}
+    end;
+
+handle_info({'DOWN', _, process, Pid, normal}, Name, #{connections := Connections, associations := Associations} = Data) ->
+    %% lost connectivity to a node
+    case Connections of
+        #{Pid := #{association := Association}} ->
+            {next_state, Name, Data#{connections := maps:without([Pid], Connections),
+                                     associations := maps:without([Association], Associations)}};
+
+        #{Pid := _} ->
+            {next_state, Name, Data#{connections := maps:without([Pid], Connections)}}
     end;
 
 handle_info({gun_down, _Peer, ws, _, _, _}, Name, Data) ->
@@ -338,7 +366,7 @@ follower({append_entries, #{entries := Entries,
                              commit_index => Commit1,
                              last_applied => Commit1
                             };
-
+                     
                      _ ->
                          D0
                  end,
