@@ -16,10 +16,12 @@
 -behaviour(gen_fsm).
 
 %% API.
+-export([add_connection/3]).
 -export([add_server/1]).
--export([append_entries/5]).
+-export([append_entries_response/5]).
 -export([append_entries/6]).
 -export([commit_index/0]).
+-export([demarshall/2]).
 -export([id/0]).
 -export([last_applied/0]).
 -export([log/1]).
@@ -54,6 +56,13 @@ start_link() ->
 stop() ->
     sync_send_all_state_event(stop).
 
+add_connection(Pid, Sender, Closer) ->
+    send_all_state_event({add_connection, Pid, Sender, Closer}).
+
+demarshall(Pid, Message) when is_binary(Message) ->
+    error(badarg, [Pid, Message]);
+demarshall(Pid, Message) ->
+    send_all_state_event({demarshall, Pid, Message}).
 
 add_server(URI) ->
     send_event({add_server, URI}).
@@ -72,11 +81,11 @@ commit_index() ->
     
     
 
-append_entries(Follower, Term, Success, PrevLogIndex, PrevLogTerm) ->
-    send_event({append_entries, #{term => Term, follower => Follower,
-                                  prev_log_index => PrevLogIndex,
-                                  prev_log_term => PrevLogTerm,
-                                  success => Success}}).
+append_entries_response(Follower, Term, Success, PrevLogIndex, PrevLogTerm) ->
+    send_event({append_entries_response, #{term => Term, follower => Follower,
+                                           prev_log_index => PrevLogIndex,
+                                           prev_log_term => PrevLogTerm,
+                                           success => Success}}).
 
 append_entries(LeaderTerm, Leader, LastApplied, PrevLogTerm, Entries,
                LeaderCommitIndex) ->
@@ -100,14 +109,22 @@ log(Command) ->
 send_event(Event) ->
     gen_fsm:send_event(?MODULE, Event).
 
+send_all_state_event(Event) ->
+    gen_fsm:send_all_state_event(?MODULE, Event).
+
 sync_send_all_state_event(Event) ->
     gen_fsm:sync_send_all_state_event(?MODULE, Event, 5000).
 
 
 init([]) ->
     Id = raft_ps:id(),
+    %% subscribe to mDNS advertisements if we are can mesh
+    [mdns:subscribe(advertisement) || raft_config:can(mesh)],
     {ok, follower, call_election(voted_for(
                                    #{term => raft_ps:term(Id),
+                                     env => raft_config:environment(),
+                                     associations => #{},
+                                     connections => #{},
                                      id => Id,
                                      commit_index => raft_log:commit_index(),
                                      last_applied => 0,
@@ -123,9 +140,35 @@ voted_for(#{id := Id} = Data) ->
             Data#{voted_for => VotedFor}
     end.
 
-handle_event({ws_send, Recipient, Frame}, State, Data) ->
-    gun:ws_send(Recipient, Frame),
+handle_event({demarshall, Pid, Message}, State, Data) ->
+    {next_state, State, do_demarshall(Pid, Message, Data)};
+
+handle_event({add_connection, Peer, Sender, Closer}, State, Data) ->
+    {next_state, State, do_add_connection(Peer, Sender, Closer, Data)};
+
+handle_event(
+  {mdns_advertisement, #{id := Id}},
+  State,
+  #{id := Id} = Data) ->
     {next_state, State, Data};
+
+handle_event(
+  {mdns_advertisement, #{id := Id,
+                         env := Env,
+                         port := Port,
+                         ttl := TTL,
+                         host := Host}},
+  State,
+  #{associations := Associations,
+    env := Env} = Data) when TTL > 0 ->
+    case Associations of
+        #{Id := _} ->
+            {next_state, State, Data};
+
+        #{} ->
+            URL = "http://" ++ Host ++ ":" ++ any:to_list(Port) ++ "/api/",
+            {next_state, State, do_add_server(URL, Data)}
+    end;
 
 handle_event(_, _, Data) ->
     {stop, error, Data}.
@@ -140,10 +183,36 @@ handle_sync_event(id, _From, Name, #{id := Id} = Data) ->
 handle_sync_event(stop, _From, _Name, Data) ->
     {stop, normal, Data}.
 
+handle_info({_,
+             {mdns, advertisement},
+             #{advertiser := raft_tcp_advertiser,
+               id := Id,
+               env := Env,
+               port := Port,
+               ttl := TTL,
+               host := Host}},
+            Name,
+            Data) ->
+    send_all_state_event(
+      {mdns_advertisement, #{id => any:to_binary(Id),
+                             env => Env,
+                             port => Port,
+                             ttl => TTL,
+                             host => Host}}),
+    {next_state, Name, Data};
+
+handle_info({_,
+             {mdns, advertisement},
+             #{advertiser := _}},
+            Name,
+            Data) ->
+    {next_state, Name, Data};
+
 handle_info({'DOWN', _, process, Peer, normal}, Name, #{connecting := Connecting, change := #{type := add_server, uri := URI}} = Data) ->
     %% unable to connect to peer, possibly due to connectivity not being present
     case maps:find(Peer, Connecting) of
         {ok, _Path} ->
+            %% log as an issue connecting to the remote node
             error_logger:info_report([{module, ?MODULE},
                                       {line, ?LINE},
                                       {uri, URI},
@@ -155,8 +224,44 @@ handle_info({'DOWN', _, process, Peer, normal}, Name, #{connecting := Connecting
             {stop, error, Data}
     end;
 
-handle_info({gun_down, Peer, ws, _, _, _}, Name, Data) ->
-    raft_connection:delete(Peer),
+handle_info({'DOWN', _, process, Pid, normal}, leader, #{connections := Connections,
+                                                         associations := Associations,
+                                                         match_indexes := MatchIndexes,
+                                                         next_indexes := NextIndexes} = Data) ->
+    %% lost connectivity to a node
+    case Connections of
+        #{Pid := #{association := Association}} ->
+            {next_state, leader, Data#{connections := maps:without([Pid], Connections),
+                                       match_indexes := maps:without([Association], MatchIndexes),
+                                       next_indexes := maps:without([Association], NextIndexes),
+                                       associations := maps:without([Association], Associations)}};
+
+        #{Pid := _} ->
+            {next_state, leader, Data#{connections := maps:without([Pid], Connections)}};
+
+        #{} ->
+            %% lost connectivity before we really knew anything about
+            %% this node
+            {next_state, leader, Data}
+    end;
+
+handle_info({'DOWN', _, process, Pid, normal}, Name, #{connections := Connections, associations := Associations} = Data) ->
+    %% lost connectivity to a node
+    case Connections of
+        #{Pid := #{association := Association}} ->
+            {next_state, Name, Data#{connections := maps:without([Pid], Connections),
+                                     associations := maps:without([Association], Associations)}};
+
+        #{Pid := _} ->
+            {next_state, Name, Data#{connections := maps:without([Pid], Connections)}};
+
+        #{} ->
+            %% lost connectivity before we really knew anything about
+            %% this node
+            {next_state, leader, Data}
+    end;
+
+handle_info({gun_down, _Peer, ws, _, _, _}, Name, Data) ->
     {next_state, Name, Data};
 
 handle_info({gun_up, Peer, _}, Name, #{connecting := Connecting} = Data) ->
@@ -172,30 +277,30 @@ handle_info({gun_up, Peer, _}, Name, #{connecting := Connecting} = Data) ->
 handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{}} = Data) ->
     case maps:find(Peer, C) of
         {ok, _} ->
-            raft_connection:new(
-              Peer,
-              fun
-                  (Message) ->
-                      gen_fsm:send_all_state_event(
-                        ?MODULE, {ws_send, Peer, {binary, raft_rpc:encode(Message)}})
-              end,
-              fun
-                  () ->
-                  gen_fsm:send_all_state_event(?MODULE, {ws_close, Peer})
-              end),
-            {next_state, Name, maps:without([change], Data#{connecting := maps:without([Peer], C)})};
+            {next_state,
+             Name,
+             do_add_connection(
+               Peer,
+               fun
+                   (Message) ->
+                       gun:ws_send(Peer, {binary, raft_rpc:encode(Message)})
+               end,
+               fun
+                   () ->
+                       gun:close(Peer)
+               end,
+               maps:without([change], Data#{connecting := maps:without([Peer], C)}))};
 
         error ->
             {stop, error, Data}
     end;
 
 handle_info({gun_ws, Peer, {binary, Message}}, Name, Data) ->
-    raft_rpc:demarshall(Peer, Message),
-    {next_state, Name, Data}.
+    {next_state, Name, do_demarshall(Peer, raft_rpc:decode(Message), Data)}.
 
 
 terminate(_Reason, _State, _Data) ->
-    ok.
+    gproc:goodbye().
 
 code_change(_OldVsn, State, Data, _Extra) ->
     {ok, State, Data}.
@@ -207,16 +312,9 @@ follower({add_server, _}, #{change := _} = Data) ->
 follower({remove_server, _}, #{change := _} = Data) ->
     %% change already in progress
     {next_state, follower, Data};
-follower({add_server = Change, URI}, #{connecting := Connecting, last_applied := 0, commit_index := 0} = Data) ->
-    case http_uri:parse(URI) of
-        {ok, {_, _, Host, Port, Path, _}} ->
-            {ok, Peer} = gun:open(Host, Port),
-            monitor(process, Peer),
-            {next_state, follower, Data#{connecting := Connecting#{Peer => Path}, change => #{type => Change, uri => URI}}};
+follower({add_server, URI}, #{last_applied := 0, commit_index := 0} = Data) ->
+    {next_state, follower, do_add_server(URI, Data)};
 
-        {error, _} ->
-            {next_state, follower, Data}
-    end;
 follower({add_server, _}, Data) ->
     {next_state, follower, Data};
 follower({remove_server, _}, Data) ->
@@ -229,7 +327,7 @@ follower(call_election, #{term := T0,
                           id := Id,
                           commit_index := CI} = D0) ->
     T1 = raft_ps:increment(Id, T0),
-    raft_rpc:request_vote(T1, Id, CI, CI),
+    broadcast(raft_rpc:request_vote(T1, Id, CI, CI), D0),
     D1 = drop_votes(D0),
     D2 = D1#{term => T1,
              voted_for => raft_ps:voted_for(Id, Id),
@@ -250,8 +348,11 @@ follower({append_entries, #{term := Term,
                             prev_log_term := PrevLogTerm,
                             entries := _}},
           #{term := Current, id := Id} = Data) when Term < Current ->
-    raft_rpc:append_entries(
-      Leader, Id, Current, PrevLogIndex, PrevLogTerm, false),
+    send(
+      raft_rpc:append_entries_response(
+        Leader, Id, Current, PrevLogIndex, PrevLogTerm, false),
+      Leader,
+      Data),
     {next_state, follower, Data};
 
 follower({append_entries, #{entries := Entries,
@@ -275,39 +376,56 @@ follower({append_entries, #{entries := Entries,
                              commit_index => Commit1,
                              last_applied => Commit1
                             };
-
+                     
                      _ ->
                          D0
                  end,
-            raft_rpc:append_entries(
-              L, Id, T, LastIndex, raft_log:term_for_index(LastIndex), true),
+            send(
+              raft_rpc:append_entries_response(
+                L, Id, T, LastIndex, raft_log:term_for_index(LastIndex), true),
+              L,
+              D1),
             {next_state, follower, call_election(
                                      D1#{term => raft_ps:term(Id, T),
                                          leader => L})};
 
         {ok, LastIndex} ->
-            raft_rpc:append_entries(
-              L, Id, T, LastIndex, raft_log:term_for_index(LastIndex), true),
+            send(
+              raft_rpc:append_entries_response(
+                L, Id, T, LastIndex, raft_log:term_for_index(LastIndex), true),
+              L,
+              D0),
             {next_state, follower, call_election(
                                      D0#{term => raft_ps:term(Id, T),
                                          leader => L})};
 
         {error, unmatched_term} ->
-            raft_rpc:append_entries(L, Id, T, PrevLogIndex, PrevLogTerm, false),
+            #{index := LastIndex, term := LastTerm} = raft_log:last(),
+            send(
+              raft_rpc:append_entries_response(
+                L, Id, T, LastIndex, LastTerm, false),
+              L,
+              D0),
             {next_state, follower, call_election(
                                      D0#{term => raft_ps:term(Id, T),
                                          leader => L})}
     end;
 
 follower({log, Command}, #{leader := Leader} = Data) ->
-    raft_rpc:log(Leader, Command),
+    send(
+      raft_rpc:log(Command),
+      Leader,
+      Data),
     {next_state, follower, Data};
 
 
 %% Reply false if term < currentTerm (§5.1)
 follower({request_vote, #{term := Term, candidate := Candidate}},
          #{term := Current, id := Id} = Data) when Term < Current ->
-    raft_rpc:vote(Candidate, Id, Current, false),
+    send(
+      raft_rpc:vote(Id, Current, false),
+      Candidate,
+      Data),
     {next_state, follower, Data};
 
 %% If votedFor is null or candidateId, and candidate’s log is at least
@@ -315,7 +433,10 @@ follower({request_vote, #{term := Term, candidate := Candidate}},
 follower({request_vote, #{term := T,
                           candidate := Candidate}},
          #{id := Id, term := T, voted_for := Candidate} = Data) ->
-    raft_rpc:vote(Candidate, Id, T, true),
+    send(
+      raft_rpc:vote(Id, T, true),
+      Candidate,
+      Data),
     {next_state, follower, call_election(Data)};
 
 
@@ -335,7 +456,10 @@ follower({request_vote, #{term := Term,
     %% up-to-date.
     case raft_log:last() of
         #{term := LogTerm} when LogTerm > LastLogTerm ->
-            raft_rpc:vote(Candidate, Id, Term, false),
+            send(
+              raft_rpc:vote(Id, Term, false),
+              Candidate,
+              Data),
             raft_ps:voted_for(Id, undefined),
             {next_state, follower, maps:without(
                                      [voted_for],
@@ -343,7 +467,10 @@ follower({request_vote, #{term := Term,
                                        Data#{term => raft_ps:term(Id, Term)}))};
 
         #{term := LogTerm} when LogTerm < LastLogTerm ->
-            raft_rpc:vote(Candidate, Id, Term, true),
+            send(
+              raft_rpc:vote(Id, Term, true),
+              Candidate,
+              Data),
             {next_state, follower, call_election(
                                      Data#{term => raft_ps:term(Id, Term),
                                            voted_for => raft_ps:voted_for(
@@ -351,14 +478,20 @@ follower({request_vote, #{term := Term,
 
 
         #{index := LogIndex} when LastLogIndex >= LogIndex->
-            raft_rpc:vote(Candidate, Id, Term, true),
+            send(
+              raft_rpc:vote(Id, Term, true),
+              Candidate,
+              Data),
             {next_state, follower, call_election(
                                      Data#{term => raft_ps:term(Id, Term),
                                            voted_for => raft_ps:voted_for(
                                                           Id, Candidate)})};
 
         #{index := LogIndex} when LastLogIndex < LogIndex->
-            raft_rpc:vote(Candidate, Id, Term, false),
+            send(
+              raft_rpc:vote(Id, Term, false),
+              Candidate,
+              Data),
             raft_ps:voted_for(Id, undefined),
             {next_state, follower, maps:without(
                                      [voted_for],
@@ -370,7 +503,10 @@ follower({request_vote, #{term := Term,
 %% as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
 follower({request_vote, #{term := T, candidate := Candidate}},
          #{id := Id, term := T, voted_for := _} = Data) ->
-    raft_rpc:vote(Candidate, Id, T, false),
+    send(
+      raft_rpc:vote(Id, T, false),
+      Candidate,
+      Data),
     {next_state, follower, Data};
 
 %% an old vote for when we were a candidate
@@ -387,16 +523,8 @@ candidate({add_server, _}, #{change := _} = Data) ->
 candidate({remove_server, _}, #{change := _} = Data) ->
     %% change already in progress
     {next_state, candidate, Data};
-candidate({add_server = Change, URI}, #{connecting := Connecting, last_applied := 0, commit_index := 0} = Data) ->
-    case http_uri:parse(URI) of
-        {ok, {_, _, Host, Port, Path, _}} ->
-            {ok, Peer} = gun:open(Host, Port),
-            monitor(process, Peer),
-            {next_state, candidate, Data#{connecting := Connecting#{Peer => Path}, change => #{type => Change, uri => URI}}};
-
-        {error, _} ->
-            {next_state, candidate, Data}
-    end;
+candidate({add_server, URI}, #{last_applied := 0, commit_index := 0} = Data) ->
+    {next_state, candidate, do_add_server(URI, Data)};
 candidate({add_server, _}, Data) ->
     {next_state, candidate, Data};
 candidate({remove_server, _}, Data) ->
@@ -404,7 +532,9 @@ candidate({remove_server, _}, Data) ->
 
 candidate(rerun_election, #{term := T0, id := Id, commit_index := CI} = D0) ->
     T1 = raft_ps:increment(Id, T0),
-    raft_rpc:request_vote(T1, Id, CI, CI),
+    broadcast(
+      raft_rpc:request_vote(T1, Id, CI, CI),
+      D0),
     D1 = D0#{term => T1,
              voted_for => raft_ps:voted_for(Id, Id),
              for => [Id],
@@ -424,8 +554,11 @@ candidate({append_entries, #{term := Term,
                              prev_log_term := PrevLogTerm,
                              leader := Leader}},
           #{term := Current, id := Id} = Data) when Term < Current ->
-    raft_rpc:append_entries(
-      Leader, Id, Current, PrevLogIndex, PrevLogTerm, false),
+    send(
+      raft_rpc:append_entries_response(
+        Leader, Id, Current, PrevLogIndex, PrevLogTerm, false),
+      Leader,
+      Data),
     {next_state, candidate, Data};
 
 candidate({append_entries, #{entries := [],
@@ -433,22 +566,31 @@ candidate({append_entries, #{entries := [],
                              prev_log_term := PrevLogTerm,
                              leader := L, term := T}},
          #{id := Id} = Data) ->
-    raft_rpc:append_entries(
-      L, Id, T, PrevLogIndex, PrevLogTerm, true),
+    send(
+      raft_rpc:append_entries_response(
+        L, Id, T, PrevLogIndex, PrevLogTerm, true),
+      L,
+      Data),
     {next_state, follower, call_election(Data#{term => raft_ps:term(Id, T),
                                                leader => L})};
 
 candidate({request_vote, #{candidate := C}}, #{term := T, id := Id} = Data) ->
-    raft_rpc:vote(C, Id, T, false),
+    send(
+      raft_rpc:vote(Id, T, false),
+      C,
+      Data),
     {next_state, candidate, Data};
 
 candidate({vote, #{elector := Elector, term := Term, granted := true}},
           #{for := For, term := Term, id := Id, commit_index := CI,
+            connections := Connections,
             last_applied := LA, state_machine := SM} = Data) ->
 
-    case {ordsets:add_element(Elector, For), raft_connection:size() + 1} of
-        {Proposers, Nodes} when length(Proposers) > (Nodes / 2) ->
-            raft_rpc:heartbeat(Term, Id, LA, raft_log:term_for_index(LA), CI),
+    case ordsets:add_element(Elector, For) of
+        Proposers when length(Proposers) > ((map_size(Connections) + 1) div 2) ->
+            broadcast(
+              raft_rpc:heartbeat(Term, Id, LA, raft_log:term_for_index(LA), CI),
+              Data),
 
             (SM == undefined) andalso log(#{m => raft_sm, f => new}),
             log(#{m => raft_sm, f => system, a => [elected, #{id => Id, proposers => Proposers, term => Term}]}),
@@ -472,7 +614,7 @@ candidate({vote, #{elector := Elector, term := Term, granted := true}},
                                                      #{},
                                                      Proposers))})};
 
-        {Proposers, _} ->
+        Proposers ->
             {next_state, candidate, Data#{for => Proposers}}
     end;
 
@@ -494,16 +636,8 @@ leader({add_server, _}, #{change := _} = Data) ->
 leader({remove_server, _}, #{change := _} = Data) ->
     %% change already in progress
     {next_state, leader, Data};
-leader({add_server = Change, URI}, #{connecting := Connecting} = Data) ->
-    case http_uri:parse(URI) of
-        {ok, {_, _, Host, Port, Path, _}} ->
-            {ok, Peer} = gun:open(Host, Port),
-            monitor(process, Peer),
-            {next_state, leader, Data#{connecting := Connecting#{Peer => Path}, change => #{type => Change, uri => URI}}};
-
-        {error, _} ->
-            {next_state, leader, Data}
-    end;
+leader({add_server, URI}, Data) ->
+    {next_state, leader, do_add_server(URI, Data)};
 
 leader({log, Command}, #{id := Id, term := Term,
                          commit_index := CI, next_indexes := NI} = Data) ->
@@ -513,14 +647,16 @@ leader({log, Command}, #{id := Id, term := Term,
        next_indexes := maps:fold(
                          fun
                              (Follower, Index, A) when LastLogIndex >= Index ->
-                                 raft_rpc:append_entries(
+                                 send(
+                                   raft_rpc:append_entries(
+                                     Term,
+                                     Id,
+                                     LastLogIndex-1,
+                                     raft_log:term_for_index(LastLogIndex-1),
+                                     CI,
+                                     [#{term => Term, command => Command}]),
                                    Follower,
-                                   Term,
-                                   Id,
-                                   LastLogIndex-1,
-                                   raft_log:term_for_index(LastLogIndex-1),
-                                   CI,
-                                   [#{term => Term, command => Command}]),
+                                   Data),
                                  A#{Follower => LastLogIndex+1};
 
                             (Follower, Index, A) ->
@@ -534,7 +670,7 @@ leader({log, Command}, #{id := Id, term := Term,
 leader({_, #{term := Term}},
        #{id := Id, term := Current} = Data) when Term > Current ->
     {next_state, follower, maps:without(
-                             [next_indexes],
+                             [match_indexes, next_indexes],
                              call_election(
                                drop_votes(
                                  Data#{term := raft_ps:term(Id, Term)})))};
@@ -545,14 +681,22 @@ leader({append_entries, #{term := Term, leader := Leader}},
          prev_log_index := PrevLogIndex,
          prev_log_term := PrevLogTerm,
          id := Id} = Data) when Term < Current ->
-    raft_rpc:append_entries(
-      Leader, Id, Current, PrevLogIndex, PrevLogTerm, false),
+    send(
+      raft_rpc:append_entries_response(
+        Leader, Id, Current, PrevLogIndex, PrevLogTerm, false),
+      Leader,
+      Data),
     {next_state, leader, Data};
 
+leader({append_entries_response, #{success := false,
+                                   prev_log_index := LastIndex,
+                                   follower := Follower}},
+       #{next_indexes := NextIndexes} = Data) ->
+    {next_state, leader, Data#{next_indexes := NextIndexes#{Follower := LastIndex + 1}}};
 
-leader({append_entries, #{success := true,
-                          prev_log_index := PrevLogIndex,
-                          follower := Follower}},
+leader({append_entries_response, #{success := true,
+                                   prev_log_index := PrevLogIndex,
+                                   follower := Follower}},
        #{match_indexes := Match,
          next_indexes := Next,
          last_applied := LastApplied,
@@ -593,25 +737,29 @@ leader(end_of_term, #{term := T0, commit_index := CI, id := Id,
                                (Follower, Index, A) when LA >= Index ->
                                    Entries = [raft_log:read(I) ||
                                                  I <-lists:seq(Index, LA)],
-                                   raft_rpc:append_entries(
+                                   send(
+                                     raft_rpc:append_entries(
+                                       T1,
+                                       Id,
+                                       Index-1,
+                                       raft_log:term_for_index(Index-1),
+                                       CI,
+                                       Entries),
                                      Follower,
-                                     T1,
-                                     Id,
-                                     Index-1,
-                                     raft_log:term_for_index(Index-1),
-                                     CI,
-                                     Entries),
+                                     D0),
                                    A#{Follower => LA+1};
 
                                (Follower, Index, A) ->
-                                   raft_rpc:append_entries(
+                                   send(
+                                     raft_rpc:append_entries(
+                                       T1,
+                                       Id,
+                                       Index-1,
+                                       raft_log:term_for_index(Index-1),
+                                       CI,
+                                       []),
                                      Follower,
-                                     T1,
-                                     Id,
-                                     Index-1,
-                                     raft_log:term_for_index(Index-1),
-                                     CI,
-                                     []),
+                                     D0),
                                    A#{Follower => Index}
                            end,
                            #{},
@@ -623,7 +771,10 @@ leader({vote, #{term := T, elector := Elector, granted := true}},
 
 leader({request_vote, #{term := Term, candidate := Candidate}},
        #{id := Id, commit_index := CI, next_indexes := NI} = Data) ->
-    raft_rpc:vote(Candidate, Id, Term, false),
+    send(
+      raft_rpc:vote(Id, Term, false),
+      Candidate,
+      Data),
     {next_state, leader, Data#{next_indexes := NI#{Candidate => CI + 1}}}.
 
 
@@ -685,6 +836,8 @@ sm_apply([], State) ->
 
 trace(false) ->
     recon_trace:clear();
+trace(true) ->
+    trace('_');    
 trace(Fn) ->
     recon_trace:calls({?MODULE, Fn, '_'},
                       {1000, 500},
@@ -692,4 +845,136 @@ trace(Fn) ->
                        {pid, all}]).
 
 
+do_demarshall(Pid,
+              #{request_vote := #{term := Term,
+                                  candidate := Candidate,
+                                  last_log_index := LastLogIndex,
+                                  last_log_term := LastLogTerm}},
+              Data) ->
+    eval_or_drop_duplicate_connection(
+      Candidate,
+      Pid,
+      fun
+          () ->
+              request_vote(Term, Candidate, LastLogIndex, LastLogTerm)
+      end,
+      Data);
 
+do_demarshall(Pid,
+              #{vote := #{elector := Elector,
+                          term := Term,
+                          granted := Granted}},
+              Data) ->
+    eval_or_drop_duplicate_connection(
+      Elector,
+      Pid,
+      fun
+          () ->
+              vote(Elector, Term, Granted)
+      end,
+      Data);
+
+do_demarshall(Pid,
+              #{append_entries := #{term := LeaderTerm,
+                                    leader := Leader,
+                                    prev_log_index := LastApplied,
+                                    prev_log_term := PrevLogTerm,
+                                    entries := Entries,
+                                    leader_commit := LeaderCommitIndex}},
+              Data) ->
+            eval_or_drop_duplicate_connection(
+              Leader,
+              Pid,
+              fun
+                  () -> 
+                      append_entries(
+                        LeaderTerm,
+                        Leader,
+                        LastApplied,
+                        PrevLogTerm,
+                        Entries,
+                        LeaderCommitIndex)
+              end,
+              Data);
+
+do_demarshall(Pid,
+              #{append_entries_response := #{term := Term,
+                                             leader := _Leader,
+                                             prev_log_index := PrevLogIndex,
+                                             prev_log_term := PrevLogTerm,
+                                             follower := Follower,
+                                             success := Success}},
+              Data) ->
+    eval_or_drop_duplicate_connection(
+      Follower,
+      Pid,
+      fun
+          () ->
+              append_entries_response(
+                Follower,
+                Term,
+                Success,
+                PrevLogIndex,
+                PrevLogTerm)
+      end,
+      Data);
+
+do_demarshall(_Pid,
+              #{log := Command},
+              Data) ->
+    log(Command),
+    Data.
+
+
+eval_or_drop_duplicate_connection(Id, Pid, Eval, #{associations := Associations, connections := Connections} = Data) ->
+    case {Connections, Associations} of
+        {#{Pid := _}, #{Id := Pid}} ->
+            %% association already present for this {Id, Pid}
+            %% combination: evaluate only required.
+            Eval(),
+            Data;
+
+        {#{Pid := #{closer := Closer}}, #{Id := _}} ->
+            %% association already exists for a different Pid for this
+            %% Id, close this one as a duplicate and drop the message.
+            Closer(),
+            Data;
+
+        {#{Pid := Connection}, #{}} ->
+            %% evaluate and associate this {Id, Pid}.
+            Eval(),
+            Data#{connections := Connections#{Pid := Connection#{association => Id}},
+                  associations := Associations#{Id => Pid}}
+    end.
+
+broadcast(Message, #{connections := Connections}) ->
+    maps:fold(
+      fun
+          (_, #{sender := Sender}, _) ->
+              Sender(Message);
+
+          (_, #{}, A) ->
+              A
+      end,
+      ok,
+      Connections).
+              
+send(Message, Recipient, #{associations := Associations, connections := Connections}) ->
+    #{Recipient := Pid} = Associations,
+    #{Pid := #{sender := Sender}} = Connections,
+    Sender(Message).
+
+do_add_connection(Peer, Sender, Closer, #{connections := Connections} = Data) ->
+    monitor(process, Peer),
+    Data#{connections := Connections#{Peer => #{sender => Sender, closer => Closer}}}.
+
+do_add_server(URI, #{connecting := Connecting} = Data) ->
+    case http_uri:parse(URI) of
+        {ok, {_, _, Host, Port, Path, _}} ->
+            {ok, Peer} = gun:open(Host, Port),
+            monitor(process, Peer),
+            Data#{connecting := Connecting#{Peer => Path}, change => #{type => add_server, uri => URI}};
+
+        {error, _} ->
+            Data
+    end.

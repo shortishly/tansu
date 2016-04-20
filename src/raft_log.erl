@@ -68,8 +68,11 @@ append_entries(PrevLogIndex, PrevLogTerm, Entries) ->
       fun
           () ->
               case {mnesia:last(?MODULE), mnesia:read(?MODULE, PrevLogIndex)} of
-                  {'$end_of_table', []} ->
+                  {'$end_of_table', []} when PrevLogIndex == 0 ->
                       {ok, append_entries(PrevLogIndex, Entries)};
+
+                  {'$end_of_table', []} ->
+                      {error, unmatched_term};
 
                   {_, [#?MODULE{term = PrevLogTerm}]} ->
                       {ok, append_entries(PrevLogIndex, Entries)};

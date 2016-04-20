@@ -22,35 +22,13 @@
 
 
 init(Req, State) ->
-    try
-        raft_connection:new(self(), outgoing(self()), closer(self())),
-        {cowboy_websocket, Req, State}
-
-    catch Class:Reason ->
-            error_logger:info_report([{module, ?MODULE},
-                                      {line, ?LINE},
-                                      {class, Class},
-                                      {reason, Reason},
-                                      {req, Req},
-                                      {state, State}]),
-            {stop, Req, State}
-    end.
+    raft_consensus:add_connection(self(), outgoing(self()), closer(self())),
+    {cowboy_websocket, Req, State}.
 
 
 websocket_handle({binary, Message}, Req, State) ->
-    try
-        raft_rpc:demarshall(self(), Message),
-        {ok, Req, State}
-
-    catch Class:Reason ->
-            error_logger:info_report([{module, ?MODULE},
-                                      {line, ?LINE},
-                                      {class, Class},
-                                      {reason, Reason},
-                                      {req, Req},
-                                      {state, State}]),
-            {stop, Req, State}
-    end.
+    raft_consensus:demarshall(self(), raft_rpc:decode(Message)),
+    {ok, Req, State}.
 
 websocket_info({message, Message}, Req, State) ->
     {reply, {binary, raft_rpc:encode(Message)}, Req, State};
@@ -63,8 +41,7 @@ terminate(Reason, Req, State) ->
                               {line, ?LINE},
                               {reason, Reason},
                               {req, Req},
-                              {state, State}]),
-    raft_connection:delete(self()).
+                              {state, State}]).
 
 outgoing(Recipient) ->
     fun(Message) ->
