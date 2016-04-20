@@ -13,14 +13,10 @@
 %% limitations under the License.
 
 -module(raft_sm).
--export([new/0]).
 -export([get/3]).
+-export([new/0]).
 -export([set/4]).
--export([system/2]).
--export([system/3]).
 -export([tset/5]).
--export([user/3]).
-
 
 new() ->
     #{}.
