@@ -692,7 +692,7 @@ leader({append_entries_response, #{success := false,
                                    prev_log_index := LastIndex,
                                    follower := Follower}},
        #{next_indexes := NextIndexes} = Data) ->
-    {next_state, leader, Data#{next_indexes := NextIndexes#{Follower := LastIndex}}};
+    {next_state, leader, Data#{next_indexes := NextIndexes#{Follower := LastIndex + 1}}};
 
 leader({append_entries_response, #{success := true,
                                    prev_log_index := PrevLogIndex,
