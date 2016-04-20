@@ -687,6 +687,13 @@ leader({append_entries, #{term := Term, leader := Leader}},
       Data),
     {next_state, leader, Data};
 
+leader({append_entries, #{success := false,
+                          follower := Follower}},
+       #{next_indexes := NextIndexes} = Data) ->
+    case NextIndexes of
+        #{Follower := Index} when Index > 2 ->
+            {next_state, leader, Data#{next_indexes := NextIndexes#{Follower := Index - 1}}}
+    end;
 
 leader({append_entries, #{success := true,
                           prev_log_index := PrevLogIndex,
