@@ -912,7 +912,7 @@ broadcast(Message, #{connections := Connections}) ->
       Connections).
               
 send(Message, Recipient, #{connections := Connections}) ->
-    #{Recipient := #{sender := Sender, association := _}} = Connections,
+    #{Recipient := #{sender := Sender}} = Connections,
     Sender(Message).
 
 do_add_connection(Peer, Sender, Closer, #{connections := Connections} = Data) ->
