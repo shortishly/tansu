@@ -400,9 +400,10 @@ follower({append_entries, #{entries := Entries,
                                          leader => L})};
 
         {error, unmatched_term} ->
+            #{index := LastIndex, term := LastTerm} = raft_log:last(),
             send(
               raft_rpc:append_entries_response(
-                L, Id, T, PrevLogIndex, PrevLogTerm, false),
+                L, Id, T, LastIndex, LastTerm, false),
               L,
               D0),
             {next_state, follower, call_election(
@@ -688,12 +689,10 @@ leader({append_entries, #{term := Term, leader := Leader}},
     {next_state, leader, Data};
 
 leader({append_entries_response, #{success := false,
+                                   prev_log_index := LastIndex,
                                    follower := Follower}},
        #{next_indexes := NextIndexes} = Data) ->
-    case NextIndexes of
-        #{Follower := Index} when Index > 2 ->
-            {next_state, leader, Data#{next_indexes := NextIndexes#{Follower := Index - 1}}}
-    end;
+    {next_state, leader, Data#{next_indexes := NextIndexes#{Follower := LastIndex}}};
 
 leader({append_entries_response, #{success := true,
                                    prev_log_index := PrevLogIndex,
