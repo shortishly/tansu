@@ -237,7 +237,12 @@ handle_info({'DOWN', _, process, Pid, normal}, leader, #{connections := Connecti
                                        associations := maps:without([Association], Associations)}};
 
         #{Pid := _} ->
-            {next_state, leader, Data#{connections := maps:without([Pid], Connections)}}
+            {next_state, leader, Data#{connections := maps:without([Pid], Connections)}};
+
+        #{} ->
+            %% lost connectivity before we really knew anything about
+            %% this node
+            {next_state, leader, Data}
     end;
 
 handle_info({'DOWN', _, process, Pid, normal}, Name, #{connections := Connections, associations := Associations} = Data) ->
@@ -248,7 +253,12 @@ handle_info({'DOWN', _, process, Pid, normal}, Name, #{connections := Connection
                                      associations := maps:without([Association], Associations)}};
 
         #{Pid := _} ->
-            {next_state, Name, Data#{connections := maps:without([Pid], Connections)}}
+            {next_state, Name, Data#{connections := maps:without([Pid], Connections)}};
+
+        #{} ->
+            %% lost connectivity before we really knew anything about
+            %% this node
+            {next_state, leader, Data}
     end;
 
 handle_info({gun_down, _Peer, ws, _, _, _}, Name, Data) ->
@@ -290,7 +300,7 @@ handle_info({gun_ws, Peer, {binary, Message}}, Name, Data) ->
 
 
 terminate(_Reason, _State, _Data) ->
-    ok.
+    gproc:goodbye().
 
 code_change(_OldVsn, State, Data, _Extra) ->
     {ok, State, Data}.
