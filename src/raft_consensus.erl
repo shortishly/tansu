@@ -902,7 +902,7 @@ eval_or_drop_duplicate_connection(Id, Pid, Eval, #{associations := Associations,
 broadcast(Message, #{connections := Connections}) ->
     maps:fold(
       fun
-          (_, #{sender := Sender, association := _}, _) ->
+          (_, #{sender := Sender}, _) ->
               Sender(Message);
 
           (_, #{}, A) ->
