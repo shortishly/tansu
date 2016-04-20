@@ -146,21 +146,23 @@ handle_event({demarshall, Pid, Message}, State, Data) ->
 handle_event({add_connection, Peer, Sender, Closer}, State, Data) ->
     {next_state, State, do_add_connection(Peer, Sender, Closer, Data)};
 
-handle_event(
-  {mdns_advertisement, #{id := Id}},
-  State,
-  #{id := Id} = Data) ->
+handle_event({mdns_advertisement, #{ttl := 0}}, State, Data) ->
+    %% ignore "goodbyes" for the moment, rely on 'DOWN' when
+    %% connection is pulled.
+    {next_state, State, Data};
+
+handle_event({mdns_advertisement, #{id := Id}}, State, #{id := Id} = Data) ->
+    %% ignore advertisements from ourselves
     {next_state, State, Data};
 
 handle_event(
   {mdns_advertisement, #{id := Id,
                          env := Env,
                          port := Port,
-                         ttl := TTL,
                          host := Host}},
   State,
   #{associations := Associations,
-    env := Env} = Data) when TTL > 0 ->
+    env := Env} = Data) ->
     case Associations of
         #{Id := _} ->
             {next_state, State, Data};
@@ -369,7 +371,7 @@ follower({append_entries, #{entries := Entries,
         {ok, LastIndex} when LeaderCommit > Commit0 ->
             D1 = case min(LeaderCommit, LastIndex) of
                      Commit1 when Commit1 > LastApplied ->
-                         D0#{state_machine => sm_apply(
+                         D0#{state_machine => do_sm(
                                                 LastApplied + 1,
                                                 Commit1,
                                                 SM),
@@ -592,8 +594,8 @@ candidate({vote, #{elector := Elector, term := Term, granted := true}},
               raft_rpc:heartbeat(Term, Id, LA, raft_log:term_for_index(LA), CI),
               Data),
 
-            (SM == undefined) andalso log(#{m => raft_sm, f => new}),
-            log(#{m => raft_sm, f => system, a => [elected, #{id => Id, proposers => Proposers, term => Term}]}),
+            (SM == undefined) andalso do_init_log(),
+            log(#{m => raft_sm, f => set, a => [system, elected, #{id => Id, proposers => Proposers, term => Term}]}),
             {next_state, leader,
              end_of_term(
                Data#{for => Proposers,
@@ -707,7 +709,7 @@ leader({append_entries_response, #{success := true,
         Commit1 when Commit1 > LastApplied ->
             {next_state,
              leader,
-             Data#{state_machine => sm_apply(
+             Data#{state_machine => do_sm(
                                       LastApplied + 1,
                                       Commit1,
                                       SM),
@@ -810,28 +812,28 @@ commit_index_majority([H | T], Values, CI) when H > CI ->
 commit_index_majority(_, _, CI) ->
     CI.
 
-sm_apply(LastApplied, CommitIndex, State) ->
-    sm_apply(lists:seq(LastApplied, CommitIndex), State).
+do_sm(LastApplied, CommitIndex, State) ->
+    do_sm(lists:seq(LastApplied, CommitIndex), State).
 
-sm_apply([H | T], undefined) ->
+do_sm([H | T], undefined) ->
     case raft_log:read(H) of
         #{command := #{m := M, f := F, a := A}} ->
-            sm_apply(T, apply(M, F, A));
+            do_sm(T, apply(M, F, A));
 
         #{command := #{m := M, f := F}} ->
-            sm_apply(T, apply(M, F, []))
+            do_sm(T, apply(M, F, []))
     end;
 
-sm_apply([H | T], State) ->
+do_sm([H | T], State) ->
     case raft_log:read(H) of
         #{command := #{m := M, f := F, a := A}} ->
-            sm_apply(T, apply(M, F, A ++ [State]));
+            do_sm(T, apply(M, F, A ++ [State]));
 
         #{command := #{m := M, f := F}} ->
-            sm_apply(T, apply(M, F, [State]))
+            do_sm(T, apply(M, F, [State]))
     end;
 
-sm_apply([], State) ->
+do_sm([], State) ->
     State.
 
 trace(false) ->
@@ -951,10 +953,7 @@ broadcast(Message, #{connections := Connections}) ->
     maps:fold(
       fun
           (_, #{sender := Sender}, _) ->
-              Sender(Message);
-
-          (_, #{}, A) ->
-              A
+              Sender(Message)
       end,
       ok,
       Connections).
@@ -978,3 +977,7 @@ do_add_server(URI, #{connecting := Connecting} = Data) ->
         {error, _} ->
             Data
     end.
+
+do_init_log() ->
+    log(#{m => raft_sm, f => new}),
+    log(#{m => raft_sm, f => set, a => [system, cluster, raft_uuid:new()]}).

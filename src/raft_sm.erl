@@ -14,16 +14,55 @@
 
 -module(raft_sm).
 -export([new/0]).
+-export([get/3]).
+-export([set/4]).
+-export([system/2]).
 -export([system/3]).
+-export([tset/5]).
 -export([user/3]).
 
 
 new() ->
-    #{user => #{}, system => #{}}.
+    #{}.
 
-system(Key, Value, #{system := System} = StateMachine) ->
-    StateMachine#{system := System#{Key => Value}}.
 
-user(Key, Value, #{user := User} = StateMachine) ->
-    StateMachine#{user := User#{Key => Value}}.
+get(Category, Key, StateMachine) ->
+    case StateMachine of
+        #{Category := #{Key := Value}} ->
+            Value;
+
+        _ ->
+            error(badarg, [Category, Key, StateMachine])
+    end.
+
+
+set(Category, Key, Value, StateMachine) ->
+    case StateMachine of
+        #{Category := KVS} ->
+            StateMachine#{Category := KVS#{Key => Value}};
+
+        _ ->
+            set(Category, Key, Value, StateMachine#{Category => #{}})
+    end.
+
+
+tset(Category, Key, undefined, NewValue, StateMachine) ->
+    case StateMachine of
+        #{Category := #{Key := _}} ->
+            error(badarg, [Category, Key, undefined, NewValue, StateMachine]);
+
+        #{Category := KVS} ->
+            StateMachine#{Category := KVS#{Key => NewValue}};
+
+        _ ->
+            StateMachine#{Category => #{Key => NewValue}}
+    end;
+tset(Category, Key, ExistingValue, NewValue, StateMachine) ->
+    case StateMachine of
+        #{Category := #{Key := ExistingValue} = KVS} ->
+            StateMachine#{Category := KVS#{Key => NewValue}};
+
+        _ ->
+            error(badarg, [Category, Key, undefined, NewValue, StateMachine])
+    end.
 
