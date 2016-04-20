@@ -59,6 +59,8 @@ stop() ->
 add_connection(Pid, Sender, Closer) ->
     send_all_state_event({add_connection, Pid, Sender, Closer}).
 
+demarshall(Pid, Message) when is_binary(Message) ->
+    error(badarg, [Pid, Message]);
 demarshall(Pid, Message) ->
     send_all_state_event({demarshall, Pid, Message}).
 

@@ -25,50 +25,49 @@
 
 
 request_vote(Term, Candidate, LastLogIndex, LastLogTerm) ->
-    encode(
-      #{request_vote => #{
-          term => Term,
-          candidate => Candidate,
-          last_log_index => LastLogIndex,
-          last_log_term => LastLogTerm}}).
+    #{request_vote => #{
+        term => Term,
+        candidate => Candidate,
+        last_log_index => LastLogIndex,
+        last_log_term => LastLogTerm}}.
 
 
 append_entries_response(Leader, Follower, Term, PrevLogIndex, PrevLogTerm, Success) ->
-    encode(#{append_entries_response => #{
-               term => Term,
-               prev_log_index => PrevLogIndex,
-               prev_log_term => PrevLogTerm,
-               follower => Follower,
-               leader => Leader,
-               success => Success}}).
+    #{append_entries_response => #{
+        term => Term,
+        prev_log_index => PrevLogIndex,
+        prev_log_term => PrevLogTerm,
+        follower => Follower,
+        leader => Leader,
+        success => Success}}.
 
 append_entries(LeaderTerm, Leader, LastApplied, PrevLogTerm,
                LeaderCommitIndex, Entries) ->
-    encode(#{append_entries => #{
-               term => LeaderTerm,
-               leader => Leader,
-               prev_log_index =>LastApplied,
-               prev_log_term => PrevLogTerm,
-               entries => Entries,
-               leader_commit => LeaderCommitIndex}}).
+    #{append_entries => #{
+        term => LeaderTerm,
+        leader => Leader,
+        prev_log_index =>LastApplied,
+        prev_log_term => PrevLogTerm,
+        entries => Entries,
+        leader_commit => LeaderCommitIndex}}.
 
 log(Command) ->
-    encode(#{log => Command}).
+    #{log => Command}.
 
 
 vote(Elector, Term, Granted) ->
-    encode(#{vote => #{elector => Elector,
-                       term => Term,
-                       granted => Granted}}).
+    #{vote => #{elector => Elector,
+                term => Term,
+                granted => Granted}}.
 
 
 heartbeat(LeaderTerm, Leader, LastApplied, PrevLogTerm, LeaderCommitIndex) ->
-    encode(#{append_entries => #{term => LeaderTerm,
-                                 leader => Leader,
-                                 prev_log_index =>LastApplied,
-                                 prev_log_term => PrevLogTerm,
-                                 entries => [],
-                                 leader_commit => LeaderCommitIndex}}).
+    #{append_entries => #{term => LeaderTerm,
+                          leader => Leader,
+                          prev_log_index =>LastApplied,
+                          prev_log_term => PrevLogTerm,
+                          entries => [],
+                          leader_commit => LeaderCommitIndex}}.
 
 
 decode(<<Size:32, BERT:Size/bytes>>) ->
