@@ -49,7 +49,6 @@ rerun_election(#{term := T0, id := Id, commit_index := CI} = D0) ->
 
 %% If RPC request or response contains term T > currentTerm: set
 %% currentTerm = T, convert to follower (§5.1)
-%% TODO
 append_entries(#{term := T}, #{id := Id,
                                term := CT} = Data) when T > CT ->
     {next_state, follower, raft_consensus:do_call_election_after_timeout(
@@ -87,6 +86,14 @@ request_vote(#{candidate := C}, #{term := T, id := Id} = Data) ->
       C,
       Data),
     {next_state, candidate, Data}.
+
+
+%% If RPC request or response contains term T > currentTerm: set
+%% currentTerm = T, convert to follower (§5.1)
+vote(#{term := T}, #{id := Id,
+                               term := CT} = Data) when T > CT ->
+    {next_state, follower, raft_consensus:do_call_election_after_timeout(
+                             raft_consensus:do_drop_votes(Data#{term := raft_ps:term(Id, T)}))};
 
 vote(#{elector := Elector, term := Term, granted := true},
      #{for := For, term := Term,

@@ -136,9 +136,30 @@ end_of_term(#{term := T0, commit_index := CI, id := Id,
                            #{},
                            NI)})}.
 
+%% If RPC request or response contains term T > currentTerm: set
+%% currentTerm = T, convert to follower (§5.1)
+%% TODO
+vote(#{term := Term}, #{id := Id, term := Current} = Data) when Term > Current ->
+    {next_state, follower, maps:without(
+                             [match_indexes, next_indexes],
+                             raft_consensus:do_call_election_after_timeout(
+                               raft_consensus:do_drop_votes(
+                                 Data#{term := raft_ps:term(Id, Term)})))};
+
 vote(#{term := T, elector := Elector, granted := true},
      #{term := T, commit_index := CI, next_indexes := NI} = Data) ->
     {next_state, leader, Data#{next_indexes := NI#{Elector => CI + 1}}}.
+
+
+%% If RPC request or response contains term T > currentTerm: set
+%% currentTerm = T, convert to follower (§5.1)
+%% TODO
+request_vote(#{term := Term}, #{id := Id, term := Current} = Data) when Term > Current ->
+    {next_state, follower, maps:without(
+                             [match_indexes, next_indexes],
+                             raft_consensus:do_call_election_after_timeout(
+                               raft_consensus:do_drop_votes(
+                                 Data#{term := raft_ps:term(Id, Term)})))};
 
 request_vote(#{term := Term, candidate := Candidate},
              #{id := Id, commit_index := CI, next_indexes := NI} = Data) ->
