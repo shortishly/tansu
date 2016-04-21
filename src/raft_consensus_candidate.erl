@@ -90,17 +90,18 @@ request_vote(#{candidate := C}, #{term := T, id := Id} = Data) ->
 
 %% If RPC request or response contains term T > currentTerm: set
 %% currentTerm = T, convert to follower (§5.1)
-vote(#{term := T}, #{id := Id,
-                               term := CT} = Data) when T > CT ->
+vote(#{term := T}, #{id := Id, term := CT} = Data) when T > CT ->
     {next_state, follower, raft_consensus:do_call_election_after_timeout(
                              raft_consensus:do_drop_votes(Data#{term := raft_ps:term(Id, T)}))};
 
 vote(#{elector := Elector, term := Term, granted := true},
-     #{for := For, term := Term,
+     #{for := For, against := Against, term := Term,
        connections := Connections} = Data) ->
 
+    Quorum = max(3, ((map_size(Connections) + 1) div 2)),
+
     case ordsets:add_element(Elector, For) of
-        Proposers when length(Proposers) > ((map_size(Connections) + 1) div 2) ->
+        Proposers when (length(Proposers) >= Quorum) andalso (length(Proposers) > length(Against)) ->
             {next_state, leader, appoint_leader(Data#{for := Proposers})};
 
         Proposers ->

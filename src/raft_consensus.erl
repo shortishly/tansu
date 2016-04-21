@@ -230,7 +230,7 @@ handle_sync_event(commit_index, _From, Name, #{commit_index := CI} = Data) ->
 handle_sync_event(id, _From, Name, #{id := Id} = Data) ->
     {reply, Id, Name, Data};
 handle_sync_event(stop, _From, _Name, Data) ->
-    {stop, normal, Data}.
+    {stop, normal, ok, Data}.
 
 handle_info({_,
              {mdns, advertisement},
