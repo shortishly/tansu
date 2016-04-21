@@ -111,9 +111,7 @@ vote(#{elector := Elector, term := Term, granted := true},
 vote(#{elector := Elector, term := Term, granted := false},
      #{against := Against, term := Term} = State) ->
     {next_state, candidate, State#{against => ordsets:add_element(
-                                                Elector, Against)}};
-vote(_, Data) ->
-    {next_state, candidate, Data}.
+                                                Elector, Against)}}.
 
 
 
