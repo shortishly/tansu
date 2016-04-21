@@ -590,5 +590,5 @@ do_log(Command, #{id := Id, term := Term, commit_index := CI, next_indexes := NI
                          NI)}.
 
 
-quorum(#{connections := Connections}) ->
-    max(raft_config:minimum(quorum), ((map_size(Connections) + 1) div 2)).
+quorum(#{associations := Associations}) ->
+    max(raft_config:minimum(quorum), ((map_size(Associations) + 1) div 2) + 1).

@@ -97,10 +97,11 @@ vote(#{term := T}, #{id := Id, term := CT} = Data) when T > CT ->
 vote(#{elector := Elector, term := Term, granted := true},
      #{for := For, against := Against, term := Term} = Data) ->
 
+    Voters = length(For) + length(Against),
     Quorum = raft_consensus:quorum(Data),
 
     case ordsets:add_element(Elector, For) of
-        Proposers when (length(Proposers) >= Quorum) andalso (length(Proposers) > length(Against)) ->
+        Proposers when (Voters >= Quorum) andalso (length(Proposers) > length(Against)) ->
             {next_state, leader, appoint_leader(Data#{for := Proposers})};
 
         Proposers ->
