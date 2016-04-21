@@ -20,6 +20,9 @@
 -export([add_server/1]).
 -export([append_entries/6]).
 -export([append_entries_response/5]).
+-export([ckv_get/2]).
+-export([ckv_set/3]).
+-export([ckv_test_and_set/4]).
 -export([commit_index/0]).
 -export([demarshall/2]).
 -export([do_add_connection/4]).
@@ -88,6 +91,18 @@ last_applied() ->
 
 commit_index() ->
     sync_send_all_state_event(commit_index).
+
+
+ckv_set(Category, Key, Value) ->
+    sync_send_all_state_event({ckv_set, Category, Key, Value}).
+
+ckv_get(Category, Key) ->
+    sync_send_all_state_event({ckv_get, Category, Key}).
+
+ckv_test_and_set(Category, Key, ExistingValue, NewValue) ->
+    sync_send_all_state_event({ckv_test_and_set, Category, Key, ExistingValue, NewValue}).
+    
+    
     
     
 
@@ -186,6 +201,18 @@ handle_event(
 handle_event(_, _, Data) ->
     {stop, error, Data}.
 
+
+handle_sync_event({ckv_test_and_set = F, Category, Key, ExistingValue, NewValue}, From, Name, Data) ->
+    do_log(#{f => F, a => [Category, Key, ExistingValue, NewValue], from => From}, Data),
+    {next_state, Name, Data};
+    
+handle_sync_event({ckv_get = F, Category, Key}, From, Name, Data) ->
+    do_log(#{f => F, a => [Category, Key], from => From}, Data),
+    {next_state, Name, Data};
+
+handle_sync_event({ckv_set = F, Category, Key, Value}, From, Name, Data) ->
+    do_log(#{f => F, a => [Category, Key, Value], from => From}, Data),
+    {next_state, Name, Data};
 
 handle_sync_event(last_applied, _From, Name, #{last_applied := LA} = Data) ->
     {reply, LA, Name, Data};
@@ -362,20 +389,34 @@ do_apply_to_state_machine(LastApplied, CommitIndex, State) ->
 
 do_apply_to_state_machine([H | T], undefined) ->
     case raft_log:read(H) of
-        #{command := #{m := M, f := F, a := A}} ->
-            do_apply_to_state_machine(T, apply(M, F, A));
+        #{command := #{f := F, a := A}} ->
+            {_, State} = apply(raft_sm, F, A),
+            do_apply_to_state_machine(T, State);
 
-        #{command := #{m := M, f := F}} ->
-            do_apply_to_state_machine(T, apply(M, F, []))
+        #{command := #{f := F}} ->
+            {_, State} = apply(raft_sm, F, []),
+            do_apply_to_state_machine(T, State)
     end;
 
-do_apply_to_state_machine([H | T], State) ->
+do_apply_to_state_machine([H | T], S0) ->
     case raft_log:read(H) of
-        #{command := #{m := M, f := F, a := A}} ->
-            do_apply_to_state_machine(T, apply(M, F, A ++ [State]));
+        #{command := #{f := F, a := A, from := From}} ->
+            {Result, S1}  = apply(raft_sm, F, A ++ [S0]),
+            gen_fsm:reply(From, Result),
+            do_apply_to_state_machine(T, S1);
 
-        #{command := #{m := M, f := F}} ->
-            do_apply_to_state_machine(T, apply(M, F, [State]))
+        #{command := #{f := F, a := A}} ->
+            {_, S1} = apply(raft_sm, F, A ++ [S0]),
+            do_apply_to_state_machine(T, S1);
+
+        #{command := #{f := F, from := From}} ->
+            {Result, S1} = apply(raft_sm, F, [S0]),
+            gen_fsm:reply(From, Result),
+            do_apply_to_state_machine(T, S1);
+
+        #{command := #{f := F}} ->
+            {_, S1} = apply(raft_sm, F, [S0]),
+            do_apply_to_state_machine(T, S1)
     end;
 
 do_apply_to_state_machine([], State) ->

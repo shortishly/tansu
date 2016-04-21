@@ -13,52 +13,52 @@
 %% limitations under the License.
 
 -module(raft_sm).
--export([get/3]).
+-export([ckv_get/3]).
 -export([new/0]).
--export([set/4]).
--export([tset/5]).
+-export([ckv_set/4]).
+-export([ckv_test_and_set/5]).
 
 new() ->
-    #{}.
+    {ok, #{}}.
 
 
-get(Category, Key, StateMachine) ->
+ckv_get(Category, Key, StateMachine) ->
     case StateMachine of
         #{Category := #{Key := Value}} ->
-            Value;
+            {{ok, Value}, StateMachine};
 
         _ ->
-            error(badarg, [Category, Key, StateMachine])
+            {{error, not_found}, StateMachine}
     end.
 
 
-set(Category, Key, Value, StateMachine) ->
+ckv_set(Category, Key, Value, StateMachine) ->
     case StateMachine of
         #{Category := KVS} ->
-            StateMachine#{Category := KVS#{Key => Value}};
+            {ok, StateMachine#{Category := KVS#{Key => Value}}};
 
         _ ->
-            set(Category, Key, Value, StateMachine#{Category => #{}})
+            ckv_set(Category, Key, Value, StateMachine#{Category => #{}})
     end.
 
 
-tset(Category, Key, undefined, NewValue, StateMachine) ->
+ckv_test_and_set(Category, Key, undefined, NewValue, StateMachine) ->
     case StateMachine of
         #{Category := #{Key := _}} ->
-            error(badarg, [Category, Key, undefined, NewValue, StateMachine]);
+            {error, StateMachine};
 
         #{Category := KVS} ->
-            StateMachine#{Category := KVS#{Key => NewValue}};
-
+            {ok, StateMachine#{Category := KVS#{Key => NewValue}}};
+        
         _ ->
-            StateMachine#{Category => #{Key => NewValue}}
+            {ok, StateMachine#{Category => #{Key => NewValue}}}
     end;
-tset(Category, Key, ExistingValue, NewValue, StateMachine) ->
+ckv_test_and_set(Category, Key, ExistingValue, NewValue, StateMachine) ->
     case StateMachine of
         #{Category := #{Key := ExistingValue} = KVS} ->
-            StateMachine#{Category := KVS#{Key => NewValue}};
+            {ok, StateMachine#{Category := KVS#{Key => NewValue}}};
 
         _ ->
-            error(badarg, [Category, Key, undefined, NewValue, StateMachine])
+            {error, StateMachine}
     end.
 
