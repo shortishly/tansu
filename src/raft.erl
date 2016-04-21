@@ -14,7 +14,6 @@
 
 -module(raft).
 
--export([connect/1]).
 -export([log/1]).
 -export([start/0]).
 -export([trace/1]).
@@ -22,9 +21,6 @@
 
 start() ->
     application:ensure_all_started(?MODULE).
-
-connect(Peer) ->
-    raft_consensus:connect(Peer).
 
 log(Command) ->
     raft_consensus:log(Command).
