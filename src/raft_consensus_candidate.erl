@@ -80,7 +80,7 @@ append_entries(#{entries := [],
     {next_state, follower, raft_consensus:do_call_election_after_timeout(
                              Data#{term => raft_ps:term(Id, T), leader => L})}.
 
-request_vote(#{candidate := C}, #{term := T, id := Id} = Data) ->
+request_vote(#{candidate := C, term := T}, #{term := T, id := Id} = Data) ->
     raft_consensus:do_send(
       raft_rpc:vote(Id, T, false),
       C,

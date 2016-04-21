@@ -28,6 +28,7 @@ start(_Type, _Args) ->
         create_schema() andalso create_tables(),
         {ok, Sup} = raft_sup:start_link(),
         start_advertiser(raft_tcp_advertiser),
+        [raft:trace(true) || raft_config:enabled(debug)],
         {ok, Sup, #{listeners => [start_http(http)]}}
     catch
         _:Reason ->

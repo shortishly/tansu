@@ -17,6 +17,7 @@
 -export([acceptors/1]).
 -export([can/1]).
 -export([db_schema/0]).
+-export([enabled/1]).
 -export([environment/0]).
 -export([minimum/1]).
 -export([port/1]).
@@ -28,6 +29,9 @@ can(discover) ->
     envy(to_boolean, can_discover, true);
 can(mesh) ->
     envy(to_boolean, can_mesh, true).
+
+enabled(debug) ->
+    envy(to_boolean, debug, false).
 
 port(http) ->
     envy(to_integer, http_port, 80).
