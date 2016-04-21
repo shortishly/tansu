@@ -36,12 +36,8 @@ websocket_info({message, Message}, Req, State) ->
 websocket_info(close, Req, State) ->
     {stop, Req, State}.
 
-terminate(Reason, Req, State) ->
-    error_logger:info_report([{module, ?MODULE},
-                              {line, ?LINE},
-                              {reason, Reason},
-                              {req, Req},
-                              {state, State}]).
+terminate(_Reason, _Req, _State) ->
+    ok.
 
 outgoing(Recipient) ->
     fun(Message) ->
