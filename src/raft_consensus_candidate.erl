@@ -95,10 +95,9 @@ vote(#{term := T}, #{id := Id, term := CT} = Data) when T > CT ->
                              raft_consensus:do_drop_votes(Data#{term := raft_ps:term(Id, T)}))};
 
 vote(#{elector := Elector, term := Term, granted := true},
-     #{for := For, against := Against, term := Term,
-       connections := Connections} = Data) ->
+     #{for := For, against := Against, term := Term} = Data) ->
 
-    Quorum = max(3, ((map_size(Connections) + 1) div 2)),
+    Quorum = raft_consensus:quorum(Data),
 
     case ordsets:add_element(Elector, For) of
         Proposers when (length(Proposers) >= Quorum) andalso (length(Proposers) > length(Against)) ->

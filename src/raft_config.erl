@@ -13,10 +13,12 @@
 %% limitations under the License.
 
 -module(raft_config).
+
 -export([acceptors/1]).
 -export([can/1]).
 -export([db_schema/0]).
 -export([environment/0]).
+-export([minimum/1]).
 -export([port/1]).
 -export([timeout/1]).
 
@@ -47,6 +49,9 @@ timeout(leader_low) ->
     envy(to_integer, timeout_leader_low, 500);
 timeout(leader_high) ->
     envy(to_integer, timeout_leader_high, 1000).
+
+minimum(quorum) ->
+    envy(to_integer, minimum_quorum, 3).
 
 envy(To, Name, Default) ->
     envy:To(raft, Name, default(Default)).

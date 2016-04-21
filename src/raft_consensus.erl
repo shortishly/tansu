@@ -39,6 +39,7 @@
 -export([id/0]).
 -export([last_applied/0]).
 -export([log/1]).
+-export([quorum/1]).
 -export([remove_server/1]).
 -export([request_vote/4]).
 -export([start/0]).
@@ -589,3 +590,5 @@ do_log(Command, #{id := Id, term := Term, commit_index := CI, next_indexes := NI
                          NI)}.
 
 
+quorum(#{connections := Connections}) ->
+    max(raft_config:minimum(quorum), ((map_size(Connections) + 1) div 2)).
