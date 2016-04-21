@@ -202,17 +202,26 @@ handle_event(_, _, Data) ->
     {stop, error, Data}.
 
 
-handle_sync_event({ckv_test_and_set = F, Category, Key, ExistingValue, NewValue}, From, Name, Data) ->
+handle_sync_event({ckv_test_and_set = F, Category, Key, ExistingValue, NewValue}, From, leader, Data) ->
     do_log(#{f => F, a => [Category, Key, ExistingValue, NewValue], from => From}, Data),
-    {next_state, Name, Data};
-    
-handle_sync_event({ckv_get = F, Category, Key}, From, Name, Data) ->
-    do_log(#{f => F, a => [Category, Key], from => From}, Data),
-    {next_state, Name, Data};
+    {next_state, leader, Data};
 
-handle_sync_event({ckv_set = F, Category, Key, Value}, From, Name, Data) ->
+handle_sync_event({ckv_test_and_set, _, _, _, _}, _, Name, Data) ->
+    {reply, not_leader, Name, Data};
+
+handle_sync_event({ckv_get = F, Category, Key}, From, leader, Data) ->
+    do_log(#{f => F, a => [Category, Key], from => From}, Data),
+    {next_state, leader, Data};
+
+handle_sync_event({ckv_get, _, _}, _, Name, Data) ->
+    {reply, not_leader, Name, Data};
+
+handle_sync_event({ckv_set = F, Category, Key, Value}, From, leader, Data) ->
     do_log(#{f => F, a => [Category, Key, Value], from => From}, Data),
-    {next_state, Name, Data};
+    {next_state, leader, Data};
+
+handle_sync_event({ckv_set, _, _, _}, _, Name, Data) ->
+    {reply, not_leader, Name, Data};
 
 handle_sync_event(last_applied, _From, Name, #{last_applied := LA} = Data) ->
     {reply, LA, Name, Data};
