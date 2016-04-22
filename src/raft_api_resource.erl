@@ -22,8 +22,14 @@
 
 
 init(Req, State) ->
-    raft_consensus:add_connection(self(), outgoing(self()), closer(self())),
-    {cowboy_websocket, Req, State}.
+    case cowboy_req:header(<<"raft-id">>, Req) of
+        undefined ->
+            {ok, cowboy_req:reply(400, Req), State};
+
+        Id ->
+            raft_consensus:add_connection(self(), Id, outgoing(self()), closer(self())),
+            {cowboy_websocket, Req, State}
+    end.
 
 
 websocket_handle({binary, Message}, Req, State) ->
