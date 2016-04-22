@@ -42,9 +42,10 @@ remove_server(_, Data) ->
 %% If election timeout elapses without receiving AppendEntries RPC
 %% from current leader or granting vote to candidate: convert to
 %% candidate
-call_election(#{term := T0, id := Id, commit_index := CI} = D0) ->
+call_election(#{term := T0, id := Id} = D0) ->
     T1 = raft_ps:increment(Id, T0),
-    raft_consensus:do_broadcast(raft_rpc:request_vote(T1, Id, CI, CI), D0),
+    #{index := LastLogIndex, term := LastLogTerm} = raft_log:last(),
+    raft_consensus:do_broadcast(raft_rpc:request_vote(T1, Id, LastLogIndex, LastLogTerm), D0),
     D1 = raft_consensus:do_drop_votes(D0),
     D2 = D1#{term => T1,
              voted_for => raft_ps:voted_for(Id, Id),
