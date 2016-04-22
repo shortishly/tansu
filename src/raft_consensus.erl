@@ -279,10 +279,10 @@ handle_info({'DOWN', _, process, Peer, normal}, Name, #{connecting := Connecting
             {stop, error, Data}
     end;
 
-handle_info({'DOWN', _, process, Pid, normal}, leader, #{connections := Connections,
-                                                         associations := Associations,
-                                                         match_indexes := MatchIndexes,
-                                                         next_indexes := NextIndexes} = Data) ->
+handle_info({'DOWN', _, process, Pid, _}, leader, #{connections := Connections,
+                                                    associations := Associations,
+                                                    match_indexes := MatchIndexes,
+                                                    next_indexes := NextIndexes} = Data) ->
     %% lost connectivity to a node
     case Connections of
         #{Pid := #{association := Association}} ->
@@ -300,7 +300,7 @@ handle_info({'DOWN', _, process, Pid, normal}, leader, #{connections := Connecti
             {next_state, leader, Data}
     end;
 
-handle_info({'DOWN', _, process, Pid, normal}, Name, #{connections := Connections, associations := Associations} = Data) ->
+handle_info({'DOWN', _, process, Pid, _}, Name, #{connections := Connections, associations := Associations} = Data) ->
     %% lost connectivity to a node
     case Connections of
         #{Pid := #{association := Association}} ->
