@@ -102,13 +102,16 @@ vote(#{term := T}, #{id := Id, term := CT} = Data) when T > CT ->
                              raft_consensus:do_drop_votes(Data#{term := raft_ps:term(Id, T)}))};
 
 vote(#{elector := Elector, term := Term, granted := true},
-     #{for := For, against := Against, term := Term} = Data) ->
+     #{for := For,
+       against := Against,
+       associations := Associations,
+       term := Term} = Data) ->
 
-    Voters = length(For) + length(Against),
+    Members = length(Associations) + 1,
     Quorum = raft_consensus:quorum(Data),
 
     case ordsets:add_element(Elector, For) of
-        Proposers when (Voters >= Quorum) andalso (length(Proposers) > length(Against)) ->
+        Proposers when (Members >= Quorum) andalso (length(Proposers) > length(Against)) ->
             {next_state, leader, appoint_leader(Data#{for := Proposers})};
 
         Proposers ->
