@@ -351,7 +351,10 @@ handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{
     end;
 
 handle_info({gun_ws, Peer, {binary, Message}}, Name, Data) ->
-    {next_state, Name, do_demarshall(Peer, raft_rpc:decode(Message), Data)}.
+    {next_state, Name, do_demarshall(Peer, raft_rpc:decode(Message), Data)};
+
+handle_info({gun_ws, _, {close, _, _}}, Name, Data) ->
+    {next_state, Name, Data}.
 
 
 terminate(_Reason, _State, _Data) ->
