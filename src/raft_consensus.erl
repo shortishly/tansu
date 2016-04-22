@@ -73,10 +73,44 @@ stop() ->
 add_connection(Pid, Id, Sender, Closer) ->
     send_all_state_event({add_connection, Pid, Id, Sender, Closer}).
 
-demarshall(Pid, Message) when is_binary(Message) ->
-    error(badarg, [Pid, Message]);
-demarshall(Pid, Message) ->
-    send_all_state_event({demarshall, Pid, Message}).
+demarshall(_, #{request_vote := #{term := Term,
+                                  candidate := Candidate,
+                                  last_log_index := LastLogIndex,
+                                  last_log_term := LastLogTerm}}) ->
+    request_vote(Term, Candidate, LastLogIndex, LastLogTerm);
+
+demarshall(_, #{vote := #{elector := Elector, term := Term, granted := Granted}}) ->
+    vote(Elector, Term, Granted);
+
+demarshall(_, #{append_entries := #{term := LeaderTerm,
+                                    leader := Leader,
+                                    prev_log_index := LastApplied,
+                                    prev_log_term := PrevLogTerm,
+                                    entries := Entries,
+                                    leader_commit := LeaderCommitIndex}}) ->
+    append_entries(
+      LeaderTerm,
+      Leader,
+      LastApplied,
+      PrevLogTerm,
+      Entries,
+      LeaderCommitIndex);
+
+demarshall(_Pid, #{append_entries_response := #{term := Term,
+                                                leader := _Leader,
+                                                prev_log_index := PrevLogIndex,
+                                                prev_log_term := PrevLogTerm,
+                                                follower := Follower,
+                                                success := Success}}) ->
+    append_entries_response(
+      Follower,
+      Term,
+      Success,
+      PrevLogIndex,
+      PrevLogTerm);
+
+demarshall(_Pid, #{log := Command}) ->
+    log(Command).
 
 add_server(URI) ->
     send_event({add_server, URI}).
