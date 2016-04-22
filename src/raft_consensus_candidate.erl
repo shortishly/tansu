@@ -107,7 +107,7 @@ vote(#{elector := Elector, term := Term, granted := true},
        associations := Associations,
        term := Term} = Data) ->
 
-    Members = length(Associations) + 1,
+    Members = erlang:map_size(Associations) + 1,
     Quorum = raft_consensus:quorum(Data),
 
     case ordsets:add_element(Elector, For) of
