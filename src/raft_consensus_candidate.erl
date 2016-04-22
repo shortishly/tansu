@@ -126,7 +126,7 @@ vote(#{elector := Elector, term := Term, granted := false},
 
 
 appoint_leader(#{term := Term,
-                 for := For,
+                 associations := Associations,
                  id := Id,
                  commit_index := CI,
                  last_applied := LA} = Data) ->
@@ -135,22 +135,20 @@ appoint_leader(#{term := Term,
       Data),
     raft_consensus:do_end_of_term_after_timeout(
       maybe_init_log(
-        Data#{next_indexes => maps:without([Id],
-                                         lists:foldl(
-                                           fun
-                                               (Server, A) ->
-                                                   A#{Server => CI+1}
-                                           end,
-                                           #{},
-                                           For)),
-            match_indexes => maps:without([Id],
-                                          lists:foldl(
-                                            fun
-                                                (Server, A) ->
-                                                    A#{Server => 0}
-                                            end,
-                                            #{},
-                                            For))})).
+        Data#{next_indexes => lists:foldl(
+                                fun
+                                    (Server, A) ->
+                                        A#{Server => CI+1}
+                                end,
+                                #{},
+                                maps:keys(Associations)),
+            match_indexes => lists:foldl(
+                               fun
+                                   (Server, A) ->
+                                       A#{Server => 0}
+                               end,
+                               #{},
+                               maps:keys(Associations))})).
 
 
 maybe_init_log(#{state_machine := undefined} = Data) ->
