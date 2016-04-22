@@ -534,19 +534,21 @@ eval_or_drop_duplicate_connection(Id, Pid, Eval, #{associations := Associations,
                   associations := Associations#{Id => Pid}}
     end.
 
-do_broadcast(Message, #{connections := Connections}) ->
+do_broadcast(Message, #{connections := Connections} = Data) ->
     maps:fold(
       fun
           (_, #{sender := Sender}, _) ->
               Sender(Message)
       end,
       ok,
-      Connections).
+      Connections),
+    Data.
               
-do_send(Message, Recipient, #{associations := Associations, connections := Connections}) ->
+do_send(Message, Recipient, #{associations := Associations, connections := Connections} = Data) ->
     #{Recipient := Pid} = Associations,
     #{Pid := #{sender := Sender}} = Connections,
-    Sender(Message).
+    Sender(Message),
+    Data.
 
 do_add_connection(Peer, Sender, Closer, #{connections := Connections} = Data) ->
     monitor(process, Peer),
