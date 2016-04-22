@@ -404,12 +404,26 @@ follower(Event, Data) when is_atom(Event) ->
     raft_consensus_follower:Event(Data).
 
 
+candidate({#{term := T0} = Event, Detail}, #{term := T1} = Data) when T0 > T1 ->
+    %%  Current terms are exchanged when- ever servers communicate; if
+    %%  one server’s current term is smaller than the other’s, then it
+    %%  updates its current term to the larger value. If a candidate
+    %%  or leader discovers that its term is out of date, it
+    %%  immediately reverts to follower state
+    raft_consensus_follower:Event(Detail, Data);
 candidate({Event, Detail}, Data) ->
     raft_consensus_candidate:Event(Detail, Data);
 candidate(Event, Data) when is_atom(Event) ->
     raft_consensus_candidate:Event(Data).
 
 
+leader({#{term := T0} = Event, Detail}, #{term := T1} = Data) when T0 > T1 ->
+    %%  Current terms are exchanged when- ever servers communicate; if
+    %%  one server’s current term is smaller than the other’s, then it
+    %%  updates its current term to the larger value. If a candidate
+    %%  or leader discovers that its term is out of date, it
+    %%  immediately reverts to follower state
+    raft_consensus_follower:Event(Detail, Data);
 leader({Event, Detail}, Data) ->
     raft_consensus_leader:Event(Detail, Data);
 leader(Event, Data) when is_atom(Event) ->
