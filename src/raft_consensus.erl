@@ -170,8 +170,14 @@ do_voted_for(#{id := Id} = Data) ->
 handle_event({demarshall, Pid, Message}, State, Data) ->
     {next_state, State, do_demarshall(Pid, Message, Data)};
 
-handle_event({add_connection, Peer, Id, Sender, Closer}, State, Data) ->
-    {next_state, State, do_add_connection(Peer, Id, Sender, Closer, Data)};
+handle_event({add_connection, Peer, Id, Sender, Closer}, State,Data) ->
+    case Data of
+         #{associations := #{Id := _}} ->
+            Closer(),
+            {next_state, State, Data};
+        _ ->
+            {next_state, State, do_add_connection(Peer, Id, Sender, Closer, Data)}
+    end;
 
 handle_event({mdns_advertisement, #{ttl := 0}}, State, Data) ->
     %% ignore "goodbyes" for the moment, rely on 'DOWN' when
@@ -188,13 +194,12 @@ handle_event(
                          port := Port,
                          host := Host}},
   State,
-  #{associations := Associations,
-    env := Env} = Data) ->
-    case Associations of
-        #{Id := _} ->
+  #{env := Env} = Data) ->
+    case Data of
+        #{associations := #{Id := _}} ->
             {next_state, State, Data};
 
-        #{} ->
+        #{associations := #{}} ->
             URL = "http://" ++ Host ++ ":" ++ any:to_list(Port) ++ "/api/",
             {next_state, State, do_add_server(URL, Data)}
     end;
