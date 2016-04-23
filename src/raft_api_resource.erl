@@ -12,29 +12,59 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
-
 -module(raft_api_resource).
+
+
 -export([init/2]).
 -export([terminate/3]).
 -export([websocket_handle/3]).
 -export([websocket_info/3]).
 
+
 init(Req, State) ->
-    raft_connection:new(self(), outgoing(self())),
+    RaftHost = cowboy_req:header(<<"raft-host">>, Req),
+    RaftId = cowboy_req:header(<<"raft-id">>, Req),
+    RaftPort = cowboy_req:header(<<"raft-port">>, Req),
+    init(Req, RaftId, RaftHost, RaftPort, State).
+
+
+init(Req, RaftId, RaftHost, RaftPort, State) when RaftId == undefined orelse
+                                                  RaftHost == undefined orelse
+                                                  RaftPort == undefined ->
+    {ok, cowboy_req:reply(400, Req), State};
+
+init(Req, RaftId, RaftHost, RaftPort, State) ->
+    raft_consensus:add_connection(
+      self(),
+      RaftId,
+      any:to_list(RaftHost),
+      any:to_integer(RaftPort),
+      outgoing(self()),
+      closer(self())),
     {cowboy_websocket, Req, State}.
 
-websocket_handle({text, Message}, Req, State) ->
-    raft_rpc:demarshall(self(), Message),
+
+websocket_handle({binary, Message}, Req, State) ->
+    raft_consensus:demarshall(self(), raft_rpc:decode(Message)),
     {ok, Req, State}.
 
 websocket_info({message, Message}, Req, State) ->
-    {reply, {text, jsx:encode(Message)}, Req, State}.
+    {reply, {binary, raft_rpc:encode(Message)}, Req, State};
+
+websocket_info(close, Req, State) ->
+    {stop, Req, State}.
 
 terminate(_Reason, _Req, _State) ->
-    raft_connection:delete(self()).
+    ok.
 
 outgoing(Recipient) ->
     fun(Message) ->
             Recipient ! {message, Message},
+            ok
+    end.
+
+closer(Recipient) ->
+    fun() ->
+            Recipient ! close,
             ok
     end.

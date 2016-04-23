@@ -1,3 +1,5 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
 %% Copyright (c) 2016 Peter Morgan <peter.james.morgan@gmail.com>
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,30 +13,27 @@
 %% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
+%%
 
--module(raft_sup).
--behaviour(supervisor).
+main([]) ->
+    io:format("~s~n",
+              lists:foldl(
+                fun
+                    ({release, {Name, _Version}, _}, A) ->
+                        [Name | A];
 
--export([init/1]).
--export([start_link/0]).
+                    (_, A) ->
+                        A
+                end,
+                [],
+                relx())).
 
-start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+root_dir() ->
+    filename:dirname(escript:script_name()).
 
-init([]) ->
-    {ok, {#{}, [worker(raft_consensus)]}}.
+config() ->
+    filename:join([root_dir(),"../relx.config"]).
 
-worker(Module) ->
-    worker(Module, transient).
-
-worker(Module, Restart) ->
-    worker(Module, Restart, []).
-
-worker(Module, Restart, Parameters) ->
-    worker(Module, Module, Restart, Parameters).
-
-worker(Id, Module, Restart, Parameters) ->
-    #{id => Id,
-      start => {Module, start_link, Parameters},
-      restart => Restart,
-      shutdown => 5000}.
+relx() ->
+    {ok, Configuration} = file:consult(config()),
+    Configuration.

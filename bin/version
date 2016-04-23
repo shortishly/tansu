@@ -1,4 +1,6 @@
-%% Copyright (c) 2016 Peter Morgan <peter.james.morgan@gmail.com>
+#!/usr/bin/env escript
+%% -*- erlang -*-
+%% Copyright (c) 2013-2016 Peter Morgan <peter.james.morgan@gmail.com>
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -11,16 +13,18 @@
 %% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
+%%
 
--module(raft_timeout).
--export([election/0]).
--export([leader/0]).
+main([]) ->
+    io:format("~s~n", [version()]).
 
+root_dir() ->
+    filename:dirname(escript:script_name()).
 
-election() ->
-    crypto:rand_uniform(raft_config:timeout(election_low),
-                        raft_config:timeout(election_high)).
+app() ->
+    [Filename] = filelib:wildcard(filename:join([root_dir(),"../ebin/*.app"])),
+    Filename.
 
-leader() ->
-    crypto:rand_uniform(raft_config:timeout(leader_low),
-                        raft_config:timeout(leader_high)).
+version() ->
+    {ok, [{application, _, Properties}]} = file:consult(app()),
+    proplists:get_value(vsn, Properties).

@@ -13,27 +13,17 @@
 %% limitations under the License.
 
 -module(raft).
--export([connect/1]).
--export([get_env/2]).
+
 -export([log/1]).
--export([make/0]).
 -export([start/0]).
 -export([trace/1]).
+-export([vsn/0]).
 
 start() ->
     application:ensure_all_started(?MODULE).
 
-make() ->
-    make:all([load]).
-
-connect(Peer) ->
-    raft_consensus:connect(Peer).
-
 log(Command) ->
     raft_consensus:log(Command).
-
-get_env(Key, Strategy) ->
-    gproc:get_env(l, ?MODULE, Key, Strategy).
 
 ensure_loaded() ->
     lists:foreach(fun code:ensure_loaded/1, modules()).
@@ -60,3 +50,7 @@ trace(false) ->
 
 m(Module) ->
     {Module, '_', '_'}.
+
+vsn() ->
+    {ok, VSN} = application:get_key(?MODULE, vsn),
+    VSN.

@@ -1,5 +1,4 @@
-%% -*- mode: erlang -*-
-%% Copyright (c) 2012-2015 Peter Morgan <peter.james.morgan@gmail.com>
+%% Copyright (c) 2016 Peter Morgan <peter.james.morgan@gmail.com>
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -13,8 +12,13 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
-{["src/*"], 
- [{i, "include"},
-  {outdir, "ebin"},
-  debug_info]
-}.
+-module(raft_cluster).
+
+-export([add/1]).
+-export([remove/1]).
+
+add(URI) ->
+    raft_consensus:add_server(URI).
+
+remove(URI) ->
+    raft_consensus:remove_server(URI).

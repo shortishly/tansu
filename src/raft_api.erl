@@ -12,16 +12,20 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_random).
--export([seed/0]).
--export([uniform_random_range/2]).
+-module(raft_api).
+-export([kv_get/1]).
+-export([kv_set/2]).
+-export([kv_test_and_set/3]).
 
 
-seed() ->
-    random:seed(erlang:phash2(node()),
-                erlang:monotonic_time(),
-                erlang:unique_integer()).
+kv_get(Key) ->
+    raft_consensus:ckv_get(category(), Key).
 
+kv_set(Key, Value) ->
+    raft_consensus:ckv_set(category(), Key, Value).
 
-uniform_random_range(Low, High) ->
-    Low + random:uniform(High-Low).
+kv_test_and_set(Key, ExistingValue, NewValue) ->
+    raft_consensus:ckv_test_and_set(category(), Key, ExistingValue, NewValue).
+
+category() ->
+    user.

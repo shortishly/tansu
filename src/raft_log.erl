@@ -43,7 +43,7 @@ create_table() ->
             true;
 
         {aborted, Reason} ->
-            error(badarg, Reason)
+            error(badarg, [Reason])
     end.
 
 last() ->
@@ -68,8 +68,11 @@ append_entries(PrevLogIndex, PrevLogTerm, Entries) ->
       fun
           () ->
               case {mnesia:last(?MODULE), mnesia:read(?MODULE, PrevLogIndex)} of
-                  {'$end_of_table', []} ->
+                  {'$end_of_table', []} when PrevLogIndex == 0 ->
                       {ok, append_entries(PrevLogIndex, Entries)};
+
+                  {'$end_of_table', []} ->
+                      {error, unmatched_term};
 
                   {_, [#?MODULE{term = PrevLogTerm}]} ->
                       {ok, append_entries(PrevLogIndex, Entries)};
@@ -101,7 +104,7 @@ read(Index) ->
                   [#?MODULE{term = T, command = C}] ->
                       #{term => T, command => C};
                   [] ->
-                      error(badarg, Index)
+                      error(badarg, [Index])
               end
       end).
 
@@ -130,7 +133,7 @@ term_for_index(Index) ->
                   [#?MODULE{term = Term}] ->
                       Term;
                   [] ->
-                      error(badarg, Index)
+                      error(badarg, [Index])
               end
       end).
 
