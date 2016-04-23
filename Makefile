@@ -15,7 +15,7 @@
 #
 PROJECT = raft
 PROJECT_DESCRIPTION = Raft Consensus
-PROJECT_VERSION = 0.1.3
+PROJECT_VERSION = 0.1.5
 
 DEPS = \
 	cowboy \
@@ -31,7 +31,9 @@ DEPS = \
 
 LOCAL_DEPS = \
 	crypto \
-	mnesia
+	inets \
+	mnesia \
+	sasl
 
 dep_cowboy = git https://github.com/ninenines/cowboy.git 2.0.0-pre.3
 dep_crown = git https://github.com/shortishly/crown.git master
