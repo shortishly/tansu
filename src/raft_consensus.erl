@@ -358,7 +358,7 @@ handle_info({gun_up, Peer, _}, Name, #{id := Id, connecting := Connecting} = Dat
         {ok, Path} ->
             gun:ws_upgrade(
               Peer, Path, [{<<"raft-id">>, Id},
-                           {<<"raft-port">>, raft_config:port(http)}]),
+                           {<<"raft-port">>, any:to_binary(raft_config:port(http))}]),
             {next_state, Name, Data};
 
         error ->

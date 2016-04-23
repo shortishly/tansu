@@ -33,7 +33,7 @@ init(Req, _RaftIP, RaftId, RaftPort, State) when RaftId == undefined orelse
     {ok, cowboy_req:reply(400, Req), State};
 
 init(Req, RaftIP, RaftId, RaftPort, State) ->
-    raft_consensus:add_connection(self(), RaftId, RaftIP, RaftPort, outgoing(self()), closer(self())),
+    raft_consensus:add_connection(self(), RaftId, RaftIP, any:to_integer(RaftPort), outgoing(self()), closer(self())),
     {cowboy_websocket, Req, State}.
 
 
