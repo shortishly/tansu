@@ -225,7 +225,7 @@ handle_event(
   {mdns_advertisement, #{id := Id,
                          env := Env,
                          port := Port,
-                         host := Host}},
+                         host := IP}},
   State,
   #{env := Env} = Data) ->
     case Data of
@@ -233,7 +233,7 @@ handle_event(
             {next_state, State, Data};
 
         #{associations := #{}} ->
-            URL = "http://" ++ Host ++ ":" ++ any:to_list(Port) ++ "/api/",
+            URL = "http://" ++ inet:ntoa(IP) ++ ":" ++ any:to_list(Port) ++ "/api/",
             {next_state, State, do_add_server(URL, Data)}
     end;
 
@@ -278,7 +278,7 @@ handle_info({_,
                env := Env,
                port := Port,
                ttl := TTL,
-               host := Host}},
+               ip := Host}},
             Name,
             Data) ->
     send_all_state_event(
@@ -306,7 +306,7 @@ handle_info({'DOWN', _, process, Peer, normal}, Name, #{connecting := Connecting
                                       {uri, URI},
                                       {type, add_server},
                                       {reason, 'DOWN'}]),
-            {next_state, Name, maps:without([connecting, change], Data)};
+            {next_state, Name, maps:without([change], Data#{connecting := maps:without([Peer], Connecting)})};
 
         error ->
             {stop, error, Data}
