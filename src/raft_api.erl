@@ -19,10 +19,13 @@
 
 
 kv_get(Key) ->
-    raft_consensus:ckv_get(user, Key).
+    raft_consensus:ckv_get(category(), Key).
 
 kv_set(Key, Value) ->
-    raft_consensus:ckv_set(user, Key, Value).
+    raft_consensus:ckv_set(category(), Key, Value).
 
 kv_test_and_set(Key, ExistingValue, NewValue) ->
-    raft_consensus:ckv_test_and_set(user, Key, ExistingValue, NewValue).
+    raft_consensus:ckv_test_and_set(category(), Key, ExistingValue, NewValue).
+
+category() ->
+    user.

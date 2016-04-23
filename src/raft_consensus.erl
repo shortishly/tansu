@@ -16,7 +16,7 @@
 -behaviour(gen_fsm).
 
 %% API.
--export([add_connection/4]).
+-export([add_connection/6]).
 -export([add_server/1]).
 -export([append_entries/6]).
 -export([append_entries_response/5]).
@@ -70,8 +70,8 @@ start_link() ->
 stop() ->
     sync_send_all_state_event(stop).
 
-add_connection(Pid, Id, Sender, Closer) ->
-    send_all_state_event({add_connection, Pid, Id, Sender, Closer}).
+add_connection(Pid, Id, IP, Port, Sender, Closer) ->
+    send_all_state_event({add_connection, Pid, Id, IP, Port, Sender, Closer}).
 
 demarshall(_, #{request_vote := #{term := Term,
                                   candidate := Candidate,
@@ -204,13 +204,13 @@ do_voted_for(#{id := Id} = Data) ->
 handle_event({demarshall, Pid, Message}, State, Data) ->
     {next_state, State, do_demarshall(Pid, Message, Data)};
 
-handle_event({add_connection, Peer, Id, Sender, Closer}, State,Data) ->
+handle_event({add_connection, Peer, Id, IP, Port, Sender, Closer}, State,Data) ->
     case Data of
          #{associations := #{Id := _}} ->
             Closer(),
             {next_state, State, Data};
         _ ->
-            {next_state, State, do_add_connection(Peer, Id, Sender, Closer, Data)}
+            {next_state, State, do_add_connection(Peer, Id, IP, Port, Sender, Closer, Data)}
     end;
 
 handle_event({mdns_advertisement, #{ttl := 0}}, State, Data) ->
@@ -356,7 +356,9 @@ handle_info({gun_down, _Peer, ws, _, _, _}, Name, Data) ->
 handle_info({gun_up, Peer, _}, Name, #{id := Id, connecting := Connecting} = Data) ->
     case maps:find(Peer, Connecting) of
         {ok, Path} ->
-            gun:ws_upgrade(Peer, Path, [{<<"raft-id">>, Id}]),
+            gun:ws_upgrade(
+              Peer, Path, [{<<"raft-id">>, Id},
+                           {<<"raft-port">>, raft_config:port(http)}]),
             {next_state, Name, Data};
 
         error ->
@@ -606,12 +608,14 @@ do_send(Message, Recipient, #{associations := Associations, connections := Conne
     Sender(Message),
     Data.
 
-do_add_connection(Peer, Id, Sender, Closer, #{associations := Associations,
-                                              connections := Connections} = Data) ->
+do_add_connection(Peer, Id, IP, Port, Sender, Closer, #{associations := Associations,
+                                                        connections := Connections} = Data) ->
     monitor(process, Peer),
     Data#{associations := Associations#{Id => Peer},
           connections := Connections#{Peer => #{sender => Sender,
                                                 closer => Closer,
+                                                ip => IP,
+                                                port => Port,
                                                 association => Id}}}.
 
 do_add_connection(Peer, Sender, Closer, #{connections := Connections} = Data) ->
