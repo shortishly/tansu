@@ -365,13 +365,15 @@ handle_info({gun_up, Peer, _}, Name, #{id := Id, connecting := Connecting} = Dat
             {stop, error, Data}
     end;
 
-handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{}} = Data) ->
+handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{type := add_server, host := Host, port := Port}} = Data) ->
     case maps:find(Peer, C) of
         {ok, _} ->
             {next_state,
              Name,
              do_add_connection(
                Peer,
+               Host,
+               Port,
                fun
                    (Message) ->
                        gun:ws_send(Peer, {binary, raft_rpc:encode(Message)})
@@ -608,26 +610,29 @@ do_send(Message, Recipient, #{associations := Associations, connections := Conne
     Sender(Message),
     Data.
 
-do_add_connection(Peer, Id, IP, Port, Sender, Closer, #{associations := Associations,
+do_add_connection(Peer, Id, Host, Port, Sender, Closer, #{associations := Associations,
                                                         connections := Connections} = Data) ->
     monitor(process, Peer),
     Data#{associations := Associations#{Id => Peer},
           connections := Connections#{Peer => #{sender => Sender,
                                                 closer => Closer,
-                                                ip => IP,
+                                                host => Host,
                                                 port => Port,
                                                 association => Id}}}.
 
-do_add_connection(Peer, Sender, Closer, #{connections := Connections} = Data) ->
+do_add_connection(Peer, Host, Port, Sender, Closer, #{connections := Connections} = Data) ->
     monitor(process, Peer),
-    Data#{connections := Connections#{Peer => #{sender => Sender, closer => Closer}}}.
+    Data#{connections := Connections#{Peer => #{sender => Sender,
+                                                host => Host,
+                                                port => Port,
+                                                closer => Closer}}}.
 
 do_add_server(URI, #{connecting := Connecting} = Data) ->
     case http_uri:parse(URI) of
         {ok, {_, _, Host, Port, Path, _}} ->
             {ok, Peer} = gun:open(Host, Port),
             monitor(process, Peer),
-            Data#{connecting := Connecting#{Peer => Path}, change => #{type => add_server, uri => URI}};
+            Data#{connecting := Connecting#{Peer => Path}, change => #{type => add_server, uri => URI, host => Host, port => Port, path => Path}};
 
         {error, _} ->
             Data
