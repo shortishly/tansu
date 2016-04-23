@@ -26,7 +26,8 @@ DEPS = \
 	jsx \
 	mdns \
 	recon \
-	rfc4122
+	rfc4122 \
+	shelly
 
 LOCAL_DEPS = \
 	crypto \
@@ -37,6 +38,7 @@ dep_crown = git https://github.com/shortishly/crown.git master
 dep_envy = git https://github.com/shortishly/envy.git master
 dep_mdns = git https://github.com/shortishly/mdns.git master
 dep_rfc4122 = git https://github.com/shortishly/rfc4122.git master
+dep_shelly = git https://github.com/shortishly/shelly.git master
 
 SHELL_OPTS = \
 	-boot start_sasl \
