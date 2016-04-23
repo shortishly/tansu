@@ -22,10 +22,10 @@
 
 
 init(Req, State) ->
-    RaftHost = cowboy_req:header(<<"raft-host">>, Req),
     RaftId = cowboy_req:header(<<"raft-id">>, Req),
+    {PeerIP, _} = cowboy_req:peer(Req),
     RaftPort = cowboy_req:header(<<"raft-port">>, Req),
-    init(Req, RaftId, RaftHost, RaftPort, State).
+    init(Req, RaftId, inet:ntoa(PeerIP), RaftPort, State).
 
 
 init(Req, RaftId, RaftHost, RaftPort, State) when RaftId == undefined orelse
@@ -37,7 +37,7 @@ init(Req, RaftId, RaftHost, RaftPort, State) ->
     raft_consensus:add_connection(
       self(),
       RaftId,
-      any:to_list(RaftHost),
+      RaftHost,
       any:to_integer(RaftPort),
       outgoing(self()),
       closer(self())),
