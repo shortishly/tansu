@@ -22,18 +22,25 @@
 
 
 init(Req, State) ->
-    {RaftIP, _} = cowboy_req:peer(Req),
+    RaftHost = cowboy_req:header(<<"raft-host">>, Req),
     RaftId = cowboy_req:header(<<"raft-id">>, Req),
     RaftPort = cowboy_req:header(<<"raft-port">>, Req),
-    init(Req, RaftIP, RaftId, RaftPort, State).
+    init(Req, RaftId, RaftHost, RaftPort, State).
 
 
-init(Req, _RaftIP, RaftId, RaftPort, State) when RaftId == undefined orelse
-                                                 RaftPort == undefined ->
+init(Req, RaftId, RaftHost, RaftPort, State) when RaftId == undefined orelse
+                                                  RaftHost == undefined orelse
+                                                  RaftPort == undefined ->
     {ok, cowboy_req:reply(400, Req), State};
 
-init(Req, RaftIP, RaftId, RaftPort, State) ->
-    raft_consensus:add_connection(self(), RaftId, RaftIP, any:to_integer(RaftPort), outgoing(self()), closer(self())),
+init(Req, RaftId, RaftHost, RaftPort, State) ->
+    raft_consensus:add_connection(
+      self(),
+      RaftId,
+      RaftHost,
+      any:to_integer(RaftPort),
+      outgoing(self()),
+      closer(self())),
     {cowboy_websocket, Req, State}.
 
 

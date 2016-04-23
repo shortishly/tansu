@@ -357,6 +357,7 @@ handle_info({gun_up, Peer, _}, Name, #{id := Id, connecting := Connecting} = Dat
         {ok, Path} ->
             gun:ws_upgrade(
               Peer, Path, [{<<"raft-id">>, Id},
+                           {<<"raft-host">>, any:to_binary(net_adm:localhost())},
                            {<<"raft-port">>, any:to_binary(raft_config:port(http))}]),
             {next_state, Name, Data};
 
