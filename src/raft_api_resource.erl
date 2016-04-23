@@ -22,7 +22,25 @@
 
 
 init(Req, State) ->
-    raft_consensus:add_connection(self(), outgoing(self()), closer(self())),
+    RaftHost = cowboy_req:header(<<"raft-host">>, Req),
+    RaftId = cowboy_req:header(<<"raft-id">>, Req),
+    RaftPort = cowboy_req:header(<<"raft-port">>, Req),
+    init(Req, RaftId, RaftHost, RaftPort, State).
+
+
+init(Req, RaftId, RaftHost, RaftPort, State) when RaftId == undefined orelse
+                                                  RaftHost == undefined orelse
+                                                  RaftPort == undefined ->
+    {ok, cowboy_req:reply(400, Req), State};
+
+init(Req, RaftId, RaftHost, RaftPort, State) ->
+    raft_consensus:add_connection(
+      self(),
+      RaftId,
+      any:to_list(RaftHost),
+      any:to_integer(RaftPort),
+      outgoing(self()),
+      closer(self())),
     {cowboy_websocket, Req, State}.
 
 
@@ -36,12 +54,8 @@ websocket_info({message, Message}, Req, State) ->
 websocket_info(close, Req, State) ->
     {stop, Req, State}.
 
-terminate(Reason, Req, State) ->
-    error_logger:info_report([{module, ?MODULE},
-                              {line, ?LINE},
-                              {reason, Reason},
-                              {req, Req},
-                              {state, State}]).
+terminate(_Reason, _Req, _State) ->
+    ok.
 
 outgoing(Recipient) ->
     fun(Message) ->

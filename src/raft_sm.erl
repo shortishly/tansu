@@ -13,17 +13,52 @@
 %% limitations under the License.
 
 -module(raft_sm).
+-export([ckv_get/3]).
 -export([new/0]).
--export([system/3]).
--export([user/3]).
-
+-export([ckv_set/4]).
+-export([ckv_test_and_set/5]).
 
 new() ->
-    #{user => #{}, system => #{}}.
+    {ok, #{}}.
 
-system(Key, Value, #{system := System} = StateMachine) ->
-    StateMachine#{system := System#{Key => Value}}.
 
-user(Key, Value, #{user := User} = StateMachine) ->
-    StateMachine#{user := User#{Key => Value}}.
+ckv_get(Category, Key, StateMachine) ->
+    case StateMachine of
+        #{Category := #{Key := Value}} ->
+            {{ok, Value}, StateMachine};
+
+        _ ->
+            {{error, not_found}, StateMachine}
+    end.
+
+
+ckv_set(Category, Key, Value, StateMachine) ->
+    case StateMachine of
+        #{Category := KVS} ->
+            {ok, StateMachine#{Category := KVS#{Key => Value}}};
+
+        _ ->
+            ckv_set(Category, Key, Value, StateMachine#{Category => #{}})
+    end.
+
+
+ckv_test_and_set(Category, Key, undefined, NewValue, StateMachine) ->
+    case StateMachine of
+        #{Category := #{Key := _}} ->
+            {error, StateMachine};
+
+        #{Category := KVS} ->
+            {ok, StateMachine#{Category := KVS#{Key => NewValue}}};
+        
+        _ ->
+            {ok, StateMachine#{Category => #{Key => NewValue}}}
+    end;
+ckv_test_and_set(Category, Key, ExistingValue, NewValue, StateMachine) ->
+    case StateMachine of
+        #{Category := #{Key := ExistingValue} = KVS} ->
+            {ok, StateMachine#{Category := KVS#{Key => NewValue}}};
+
+        _ ->
+            {error, StateMachine}
+    end.
 

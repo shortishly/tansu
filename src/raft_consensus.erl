@@ -16,21 +16,34 @@
 -behaviour(gen_fsm).
 
 %% API.
--export([add_connection/3]).
+-export([add_connection/6]).
 -export([add_server/1]).
--export([append_entries_response/5]).
 -export([append_entries/6]).
+-export([append_entries_response/5]).
+-export([ckv_get/2]).
+-export([ckv_set/3]).
+-export([ckv_test_and_set/4]).
 -export([commit_index/0]).
 -export([demarshall/2]).
+-export([do_add_server/2]).
+-export([do_apply_to_state_machine/3]).
+-export([do_broadcast/2]).
+-export([do_call_election_after_timeout/1]).
+-export([do_drop_votes/1]).
+-export([do_end_of_term_after_timeout/1]).
+-export([do_log/2]).
+-export([do_rerun_election_after_timeout/1]).
+-export([do_send/3]).
+-export([do_voted_for/1]).
 -export([id/0]).
 -export([last_applied/0]).
 -export([log/1]).
+-export([quorum/1]).
 -export([remove_server/1]).
 -export([request_vote/4]).
 -export([start/0]).
 -export([start_link/0]).
 -export([stop/0]).
--export([trace/1]).
 -export([vote/3]).
 
 %% gen_fsm.
@@ -56,13 +69,47 @@ start_link() ->
 stop() ->
     sync_send_all_state_event(stop).
 
-add_connection(Pid, Sender, Closer) ->
-    send_all_state_event({add_connection, Pid, Sender, Closer}).
+add_connection(Pid, Id, IP, Port, Sender, Closer) ->
+    send_all_state_event({add_connection, Pid, Id, IP, Port, Sender, Closer}).
 
-demarshall(Pid, Message) when is_binary(Message) ->
-    error(badarg, [Pid, Message]);
-demarshall(Pid, Message) ->
-    send_all_state_event({demarshall, Pid, Message}).
+demarshall(_, #{request_vote := #{term := Term,
+                                  candidate := Candidate,
+                                  last_log_index := LastLogIndex,
+                                  last_log_term := LastLogTerm}}) ->
+    request_vote(Term, Candidate, LastLogIndex, LastLogTerm);
+
+demarshall(_, #{vote := #{elector := Elector, term := Term, granted := Granted}}) ->
+    vote(Elector, Term, Granted);
+
+demarshall(_, #{append_entries := #{term := LeaderTerm,
+                                    leader := Leader,
+                                    prev_log_index := LastApplied,
+                                    prev_log_term := PrevLogTerm,
+                                    entries := Entries,
+                                    leader_commit := LeaderCommitIndex}}) ->
+    append_entries(
+      LeaderTerm,
+      Leader,
+      LastApplied,
+      PrevLogTerm,
+      Entries,
+      LeaderCommitIndex);
+
+demarshall(_Pid, #{append_entries_response := #{term := Term,
+                                                leader := _Leader,
+                                                prev_log_index := PrevLogIndex,
+                                                prev_log_term := PrevLogTerm,
+                                                follower := Follower,
+                                                success := Success}}) ->
+    append_entries_response(
+      Follower,
+      Term,
+      Success,
+      PrevLogIndex,
+      PrevLogTerm);
+
+demarshall(_Pid, #{log := Command}) ->
+    log(Command).
 
 add_server(URI) ->
     send_event({add_server, URI}).
@@ -78,6 +125,18 @@ last_applied() ->
 
 commit_index() ->
     sync_send_all_state_event(commit_index).
+
+
+ckv_set(Category, Key, Value) ->
+    sync_send_all_state_event({ckv_set, Category, Key, Value}).
+
+ckv_get(Category, Key) ->
+    sync_send_all_state_event({ckv_get, Category, Key}).
+
+ckv_test_and_set(Category, Key, ExistingValue, NewValue) ->
+    sync_send_all_state_event({ckv_test_and_set, Category, Key, ExistingValue, NewValue}).
+    
+    
     
     
 
@@ -120,19 +179,20 @@ init([]) ->
     Id = raft_ps:id(),
     %% subscribe to mDNS advertisements if we are can mesh
     [mdns:subscribe(advertisement) || raft_config:can(mesh)],
-    {ok, follower, call_election(voted_for(
-                                   #{term => raft_ps:term(Id),
-                                     env => raft_config:environment(),
-                                     associations => #{},
-                                     connections => #{},
-                                     id => Id,
-                                     commit_index => raft_log:commit_index(),
-                                     last_applied => 0,
-                                     state_machine => undefined,
-                                     connecting => #{}}))}.
+    {ok, follower, do_call_election_after_timeout(
+                     do_voted_for(
+                       #{term => raft_ps:term(Id),
+                         env => raft_config:environment(),
+                         associations => #{},
+                         connections => #{},
+                         id => Id,
+                         commit_index => raft_log:commit_index(),
+                         last_applied => 0,
+                         state_machine => undefined,
+                         connecting => #{}}))}.
 
 
-voted_for(#{id := Id} = Data) ->
+do_voted_for(#{id := Id} = Data) ->
     case raft_ps:voted_for(Id) of
         undefined ->
             maps:without([voted_for], Data);
@@ -143,29 +203,36 @@ voted_for(#{id := Id} = Data) ->
 handle_event({demarshall, Pid, Message}, State, Data) ->
     {next_state, State, do_demarshall(Pid, Message, Data)};
 
-handle_event({add_connection, Peer, Sender, Closer}, State, Data) ->
-    {next_state, State, do_add_connection(Peer, Sender, Closer, Data)};
+handle_event({add_connection, Peer, Id, IP, Port, Sender, Closer}, State,Data) ->
+    case Data of
+         #{associations := #{Id := _}} ->
+            Closer(),
+            {next_state, State, Data};
+        _ ->
+            {next_state, State, do_add_connection(Peer, Id, IP, Port, Sender, Closer, Data)}
+    end;
 
-handle_event(
-  {mdns_advertisement, #{id := Id}},
-  State,
-  #{id := Id} = Data) ->
+handle_event({mdns_advertisement, #{ttl := 0}}, State, Data) ->
+    %% ignore "goodbyes" for the moment, rely on 'DOWN' when
+    %% connection is pulled.
+    {next_state, State, Data};
+
+handle_event({mdns_advertisement, #{id := Id}}, State, #{id := Id} = Data) ->
+    %% ignore advertisements from ourselves
     {next_state, State, Data};
 
 handle_event(
   {mdns_advertisement, #{id := Id,
                          env := Env,
                          port := Port,
-                         ttl := TTL,
                          host := Host}},
   State,
-  #{associations := Associations,
-    env := Env} = Data) when TTL > 0 ->
-    case Associations of
-        #{Id := _} ->
+  #{env := Env} = Data) ->
+    case Data of
+        #{associations := #{Id := _}} ->
             {next_state, State, Data};
 
-        #{} ->
+        #{associations := #{}} ->
             URL = "http://" ++ Host ++ ":" ++ any:to_list(Port) ++ "/api/",
             {next_state, State, do_add_server(URL, Data)}
     end;
@@ -174,6 +241,27 @@ handle_event(_, _, Data) ->
     {stop, error, Data}.
 
 
+handle_sync_event({ckv_test_and_set = F, Category, Key, ExistingValue, NewValue}, From, leader, Data) ->
+    do_log(#{f => F, a => [Category, Key, ExistingValue, NewValue], from => From}, Data),
+    {next_state, leader, Data};
+
+handle_sync_event({ckv_test_and_set, _, _, _, _}, _, Name, Data) ->
+    {reply, not_leader, Name, Data};
+
+handle_sync_event({ckv_get = F, Category, Key}, From, leader, Data) ->
+    do_log(#{f => F, a => [Category, Key], from => From}, Data),
+    {next_state, leader, Data};
+
+handle_sync_event({ckv_get, _, _}, _, Name, Data) ->
+    {reply, not_leader, Name, Data};
+
+handle_sync_event({ckv_set = F, Category, Key, Value}, From, leader, Data) ->
+    do_log(#{f => F, a => [Category, Key, Value], from => From}, Data),
+    {next_state, leader, Data};
+
+handle_sync_event({ckv_set, _, _, _}, _, Name, Data) ->
+    {reply, not_leader, Name, Data};
+
 handle_sync_event(last_applied, _From, Name, #{last_applied := LA} = Data) ->
     {reply, LA, Name, Data};
 handle_sync_event(commit_index, _From, Name, #{commit_index := CI} = Data) ->
@@ -181,7 +269,7 @@ handle_sync_event(commit_index, _From, Name, #{commit_index := CI} = Data) ->
 handle_sync_event(id, _From, Name, #{id := Id} = Data) ->
     {reply, Id, Name, Data};
 handle_sync_event(stop, _From, _Name, Data) ->
-    {stop, normal, Data}.
+    {stop, normal, ok, Data}.
 
 handle_info({_,
              {mdns, advertisement},
@@ -224,10 +312,10 @@ handle_info({'DOWN', _, process, Peer, normal}, Name, #{connecting := Connecting
             {stop, error, Data}
     end;
 
-handle_info({'DOWN', _, process, Pid, normal}, leader, #{connections := Connections,
-                                                         associations := Associations,
-                                                         match_indexes := MatchIndexes,
-                                                         next_indexes := NextIndexes} = Data) ->
+handle_info({'DOWN', _, process, Pid, _}, leader, #{connections := Connections,
+                                                    associations := Associations,
+                                                    match_indexes := MatchIndexes,
+                                                    next_indexes := NextIndexes} = Data) ->
     %% lost connectivity to a node
     case Connections of
         #{Pid := #{association := Association}} ->
@@ -245,7 +333,7 @@ handle_info({'DOWN', _, process, Pid, normal}, leader, #{connections := Connecti
             {next_state, leader, Data}
     end;
 
-handle_info({'DOWN', _, process, Pid, normal}, Name, #{connections := Connections, associations := Associations} = Data) ->
+handle_info({'DOWN', _, process, Pid, _}, Name, #{connections := Connections, associations := Associations} = Data) ->
     %% lost connectivity to a node
     case Connections of
         #{Pid := #{association := Association}} ->
@@ -264,23 +352,28 @@ handle_info({'DOWN', _, process, Pid, normal}, Name, #{connections := Connection
 handle_info({gun_down, _Peer, ws, _, _, _}, Name, Data) ->
     {next_state, Name, Data};
 
-handle_info({gun_up, Peer, _}, Name, #{connecting := Connecting} = Data) ->
+handle_info({gun_up, Peer, _}, Name, #{id := Id, connecting := Connecting} = Data) ->
     case maps:find(Peer, Connecting) of
         {ok, Path} ->
-            gun:ws_upgrade(Peer, Path),
+            gun:ws_upgrade(
+              Peer, Path, [{<<"raft-id">>, Id},
+                           {<<"raft-host">>, any:to_binary(net_adm:localhost())},
+                           {<<"raft-port">>, any:to_binary(raft_config:port(http))}]),
             {next_state, Name, Data};
 
         error ->
             {stop, error, Data}
     end;
 
-handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{}} = Data) ->
+handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{type := add_server, host := Host, port := Port}} = Data) ->
     case maps:find(Peer, C) of
         {ok, _} ->
             {next_state,
              Name,
              do_add_connection(
                Peer,
+               Host,
+               Port,
                fun
                    (Message) ->
                        gun:ws_send(Peer, {binary, raft_rpc:encode(Message)})
@@ -296,7 +389,10 @@ handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{
     end;
 
 handle_info({gun_ws, Peer, {binary, Message}}, Name, Data) ->
-    {next_state, Name, do_demarshall(Peer, raft_rpc:decode(Message), Data)}.
+    {next_state, Name, do_demarshall(Peer, raft_rpc:decode(Message), Data)};
+
+handle_info({gun_ws, _, {close, _, _}}, Name, Data) ->
+    {next_state, Name, Data}.
 
 
 terminate(_Reason, _State, _Data) ->
@@ -306,485 +402,50 @@ code_change(_OldVsn, State, Data, _Extra) ->
     {ok, State, Data}.
 
 
-follower({add_server, _}, #{change := _} = Data) ->
-    %% change already in progress
-    {next_state, follower, Data};
-follower({remove_server, _}, #{change := _} = Data) ->
-    %% change already in progress
-    {next_state, follower, Data};
-follower({add_server, URI}, #{last_applied := 0, commit_index := 0} = Data) ->
-    {next_state, follower, do_add_server(URI, Data)};
-
-follower({add_server, _}, Data) ->
-    {next_state, follower, Data};
-follower({remove_server, _}, Data) ->
-    {next_state, follower, Data};
-
-%% If election timeout elapses without receiving AppendEntries RPC
-%% from current leader or granting vote to candidate: convert to
-%% candidate
-follower(call_election, #{term := T0,
-                          id := Id,
-                          commit_index := CI} = D0) ->
-    T1 = raft_ps:increment(Id, T0),
-    broadcast(raft_rpc:request_vote(T1, Id, CI, CI), D0),
-    D1 = drop_votes(D0),
-    D2 = D1#{term => T1,
-             voted_for => raft_ps:voted_for(Id, Id),
-             for => [Id],
-             against => []},
-    {next_state, candidate, rerun_election(D2)};
-
-%% Drop obsolete vote responses from earlier terms
-follower({vote, #{term := Term}},
-         #{term := Current} = Data) when Term < Current ->
-    {next_state, follower, Data};
+follower({Event, Detail}, Data) ->
+    raft_consensus_follower:Event(Detail, Data);
+follower(Event, Data) when is_atom(Event) ->
+    raft_consensus_follower:Event(Data).
 
 
-%% Reply false if term < currentTerm (§5.1)
-follower({append_entries, #{term := Term,
-                            leader := Leader,
-                            prev_log_index := PrevLogIndex,
-                            prev_log_term := PrevLogTerm,
-                            entries := _}},
-          #{term := Current, id := Id} = Data) when Term < Current ->
-    send(
-      raft_rpc:append_entries_response(
-        Leader, Id, Current, PrevLogIndex, PrevLogTerm, false),
-      Leader,
-      Data),
-    {next_state, follower, Data};
-
-follower({append_entries, #{entries := Entries,
-                            prev_log_index := PrevLogIndex,
-                            prev_log_term := PrevLogTerm,
-                            leader_commit := LeaderCommit,
-                            leader := L, term := T}},
-         #{commit_index := Commit0,
-           last_applied := LastApplied,
-           state_machine := SM,
-           id := Id} = D0) ->
-
-    case raft_log:append_entries(PrevLogIndex, PrevLogTerm, Entries) of
-        {ok, LastIndex} when LeaderCommit > Commit0 ->
-            D1 = case min(LeaderCommit, LastIndex) of
-                     Commit1 when Commit1 > LastApplied ->
-                         D0#{state_machine => sm_apply(
-                                                LastApplied + 1,
-                                                Commit1,
-                                                SM),
-                             commit_index => Commit1,
-                             last_applied => Commit1
-                            };
-                     
-                     _ ->
-                         D0
-                 end,
-            send(
-              raft_rpc:append_entries_response(
-                L, Id, T, LastIndex, raft_log:term_for_index(LastIndex), true),
-              L,
-              D1),
-            {next_state, follower, call_election(
-                                     D1#{term => raft_ps:term(Id, T),
-                                         leader => L})};
-
-        {ok, LastIndex} ->
-            send(
-              raft_rpc:append_entries_response(
-                L, Id, T, LastIndex, raft_log:term_for_index(LastIndex), true),
-              L,
-              D0),
-            {next_state, follower, call_election(
-                                     D0#{term => raft_ps:term(Id, T),
-                                         leader => L})};
-
-        {error, unmatched_term} ->
-            #{index := LastIndex, term := LastTerm} = raft_log:last(),
-            send(
-              raft_rpc:append_entries_response(
-                L, Id, T, LastIndex, LastTerm, false),
-              L,
-              D0),
-            {next_state, follower, call_election(
-                                     D0#{term => raft_ps:term(Id, T),
-                                         leader => L})}
-    end;
-
-follower({log, Command}, #{leader := Leader} = Data) ->
-    send(
-      raft_rpc:log(Command),
-      Leader,
-      Data),
-    {next_state, follower, Data};
+candidate({#{term := T0} = Event, Detail}, #{term := T1} = Data) when T0 > T1 ->
+    %%  Current terms are exchanged when- ever servers communicate; if
+    %%  one server’s current term is smaller than the other’s, then it
+    %%  updates its current term to the larger value. If a candidate
+    %%  or leader discovers that its term is out of date, it
+    %%  immediately reverts to follower state
+    raft_consensus_follower:Event(Detail, Data);
+candidate({Event, Detail}, Data) ->
+    raft_consensus_candidate:Event(Detail, Data);
+candidate(Event, Data) when is_atom(Event) ->
+    raft_consensus_candidate:Event(Data).
 
 
-%% Reply false if term < currentTerm (§5.1)
-follower({request_vote, #{term := Term, candidate := Candidate}},
-         #{term := Current, id := Id} = Data) when Term < Current ->
-    send(
-      raft_rpc:vote(Id, Current, false),
-      Candidate,
-      Data),
-    {next_state, follower, Data};
-
-%% If votedFor is null or candidateId, and candidate’s log is at least
-%% as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
-follower({request_vote, #{term := T,
-                          candidate := Candidate}},
-         #{id := Id, term := T, voted_for := Candidate} = Data) ->
-    send(
-      raft_rpc:vote(Id, T, true),
-      Candidate,
-      Data),
-    {next_state, follower, call_election(Data)};
+leader({#{term := T0} = Event, Detail}, #{term := T1} = Data) when T0 > T1 ->
+    %%  Current terms are exchanged when- ever servers communicate; if
+    %%  one server’s current term is smaller than the other’s, then it
+    %%  updates its current term to the larger value. If a candidate
+    %%  or leader discovers that its term is out of date, it
+    %%  immediately reverts to follower state
+    raft_consensus_follower:Event(Detail, Data);
+leader({Event, Detail}, Data) ->
+    raft_consensus_leader:Event(Detail, Data);
+leader(Event, Data) when is_atom(Event) ->
+    raft_consensus_leader:Event(Data).
 
 
-%% If votedFor is null or candidateId, and candidate’s log is at least
-%% as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
-follower({request_vote, #{term := Term,
-                          candidate := Candidate,
-                          last_log_index := LastLogIndex,
-                          last_log_term := LastLogTerm}},
-         #{term := Current, id := Id} = Data) when (Term >= Current) ->
-
-    %% Raft determines which of two logs is more up-to-date by
-    %% comparing the index and term of the last entries in the
-    %% logs. If the logs have last entries with different terms, then
-    %% the log with the later term is more up-to-date. If the logs end
-    %% with the same term, then whichever log is longer is more
-    %% up-to-date.
-    case raft_log:last() of
-        #{term := LogTerm} when LogTerm > LastLogTerm ->
-            send(
-              raft_rpc:vote(Id, Term, false),
-              Candidate,
-              Data),
-            raft_ps:voted_for(Id, undefined),
-            {next_state, follower, maps:without(
-                                     [voted_for],
-                                     call_election(
-                                       Data#{term => raft_ps:term(Id, Term)}))};
-
-        #{term := LogTerm} when LogTerm < LastLogTerm ->
-            send(
-              raft_rpc:vote(Id, Term, true),
-              Candidate,
-              Data),
-            {next_state, follower, call_election(
-                                     Data#{term => raft_ps:term(Id, Term),
-                                           voted_for => raft_ps:voted_for(
-                                                          Id, Candidate)})};
-
-
-        #{index := LogIndex} when LastLogIndex >= LogIndex->
-            send(
-              raft_rpc:vote(Id, Term, true),
-              Candidate,
-              Data),
-            {next_state, follower, call_election(
-                                     Data#{term => raft_ps:term(Id, Term),
-                                           voted_for => raft_ps:voted_for(
-                                                          Id, Candidate)})};
-
-        #{index := LogIndex} when LastLogIndex < LogIndex->
-            send(
-              raft_rpc:vote(Id, Term, false),
-              Candidate,
-              Data),
-            raft_ps:voted_for(Id, undefined),
-            {next_state, follower, maps:without(
-                                     [voted_for],
-                                     call_election(
-                                       Data#{term => raft_ps:term(Id, Term)}))}
-    end;
-
-%% If votedFor is null or candidateId, and candidate’s log is at least
-%% as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
-follower({request_vote, #{term := T, candidate := Candidate}},
-         #{id := Id, term := T, voted_for := _} = Data) ->
-    send(
-      raft_rpc:vote(Id, T, false),
-      Candidate,
-      Data),
-    {next_state, follower, Data};
-
-%% an old vote for when we were a candidate
-follower({vote, #{granted := _}}, Data) ->
-    {next_state, follower, Data}.
-
-
-
-
-
-candidate({add_server, _}, #{change := _} = Data) ->
-    %% change already in progress
-    {next_state, candidate, Data};
-candidate({remove_server, _}, #{change := _} = Data) ->
-    %% change already in progress
-    {next_state, candidate, Data};
-candidate({add_server, URI}, #{last_applied := 0, commit_index := 0} = Data) ->
-    {next_state, candidate, do_add_server(URI, Data)};
-candidate({add_server, _}, Data) ->
-    {next_state, candidate, Data};
-candidate({remove_server, _}, Data) ->
-    {next_state, candidate, Data};
-
-candidate(rerun_election, #{term := T0, id := Id, commit_index := CI} = D0) ->
-    T1 = raft_ps:increment(Id, T0),
-    broadcast(
-      raft_rpc:request_vote(T1, Id, CI, CI),
-      D0),
-    D1 = D0#{term => T1,
-             voted_for => raft_ps:voted_for(Id, Id),
-             for => [Id],
-             against => []},
-    {next_state, candidate, rerun_election(D1)};
-
-%% If RPC request or response contains term T > currentTerm: set
-%% currentTerm = T, convert to follower (§5.1)
-candidate({_, #{term := T}}, #{id := Id,
-                               term := CT} = Data) when T > CT ->
-    {next_state, follower, call_election(
-                             drop_votes(Data#{term := raft_ps:term(Id, T)}))};
-
-%% Reply false if term < currentTerm (§5.1)
-candidate({append_entries, #{term := Term,
-                             prev_log_index := PrevLogIndex,
-                             prev_log_term := PrevLogTerm,
-                             leader := Leader}},
-          #{term := Current, id := Id} = Data) when Term < Current ->
-    send(
-      raft_rpc:append_entries_response(
-        Leader, Id, Current, PrevLogIndex, PrevLogTerm, false),
-      Leader,
-      Data),
-    {next_state, candidate, Data};
-
-candidate({append_entries, #{entries := [],
-                             prev_log_index := PrevLogIndex,
-                             prev_log_term := PrevLogTerm,
-                             leader := L, term := T}},
-         #{id := Id} = Data) ->
-    send(
-      raft_rpc:append_entries_response(
-        L, Id, T, PrevLogIndex, PrevLogTerm, true),
-      L,
-      Data),
-    {next_state, follower, call_election(Data#{term => raft_ps:term(Id, T),
-                                               leader => L})};
-
-candidate({request_vote, #{candidate := C}}, #{term := T, id := Id} = Data) ->
-    send(
-      raft_rpc:vote(Id, T, false),
-      C,
-      Data),
-    {next_state, candidate, Data};
-
-candidate({vote, #{elector := Elector, term := Term, granted := true}},
-          #{for := For, term := Term, id := Id, commit_index := CI,
-            connections := Connections,
-            last_applied := LA, state_machine := SM} = Data) ->
-
-    case ordsets:add_element(Elector, For) of
-        Proposers when length(Proposers) > ((map_size(Connections) + 1) div 2) ->
-            broadcast(
-              raft_rpc:heartbeat(Term, Id, LA, raft_log:term_for_index(LA), CI),
-              Data),
-
-            (SM == undefined) andalso log(#{m => raft_sm, f => new}),
-            log(#{m => raft_sm, f => system, a => [elected, #{id => Id, proposers => Proposers, term => Term}]}),
-            {next_state, leader,
-             end_of_term(
-               Data#{for => Proposers,
-                     next_indexes => maps:without([Id],
-                                                  lists:foldl(
-                                                    fun
-                                                        (Server, A) ->
-                                                            A#{Server => CI+1}
-                                                    end,
-                                                    #{},
-                                                    Proposers)),
-                     match_indexes => maps:without([Id],
-                                                   lists:foldl(
-                                                     fun
-                                                         (Server, A) ->
-                                                             A#{Server => 0}
-                                                     end,
-                                                     #{},
-                                                     Proposers))})};
-
-        Proposers ->
-            {next_state, candidate, Data#{for => Proposers}}
-    end;
-
-candidate({vote, #{elector := Elector, term := Term, granted := false}},
-          #{against := Against, term := Term} = State) ->
-    {next_state, candidate, State#{against => ordsets:add_element(
-                                                Elector, Against)}}.
-
-drop_votes(#{id := Id} = Data) ->
+do_drop_votes(#{id := Id} = Data) ->
     raft_ps:voted_for(Id, undefined),
     maps:without([voted_for, for, against, leader], Data).
 
 
-
-
-leader({add_server, _}, #{change := _} = Data) ->
-    %% change already in progress
-    {next_state, leader, Data};
-leader({remove_server, _}, #{change := _} = Data) ->
-    %% change already in progress
-    {next_state, leader, Data};
-leader({add_server, URI}, Data) ->
-    {next_state, leader, do_add_server(URI, Data)};
-
-leader({log, Command}, #{id := Id, term := Term,
-                         commit_index := CI, next_indexes := NI} = Data) ->
-    LastLogIndex = raft_log:write(Term, Command),
-    {next_state, leader,
-     Data#{
-       next_indexes := maps:fold(
-                         fun
-                             (Follower, Index, A) when LastLogIndex >= Index ->
-                                 send(
-                                   raft_rpc:append_entries(
-                                     Term,
-                                     Id,
-                                     LastLogIndex-1,
-                                     raft_log:term_for_index(LastLogIndex-1),
-                                     CI,
-                                     [#{term => Term, command => Command}]),
-                                   Follower,
-                                   Data),
-                                 A#{Follower => LastLogIndex+1};
-
-                            (Follower, Index, A) ->
-                                 A#{Follower => Index}
-                         end,
-                         #{},
-                         NI)}};
-
-%% If RPC request or response contains term T > currentTerm: set
-%% currentTerm = T, convert to follower (§5.1)
-leader({_, #{term := Term}},
-       #{id := Id, term := Current} = Data) when Term > Current ->
-    {next_state, follower, maps:without(
-                             [match_indexes, next_indexes],
-                             call_election(
-                               drop_votes(
-                                 Data#{term := raft_ps:term(Id, Term)})))};
-
-%% Reply false if term < currentTerm (§5.1)
-leader({append_entries, #{term := Term, leader := Leader}},
-       #{term := Current,
-         prev_log_index := PrevLogIndex,
-         prev_log_term := PrevLogTerm,
-         id := Id} = Data) when Term < Current ->
-    send(
-      raft_rpc:append_entries_response(
-        Leader, Id, Current, PrevLogIndex, PrevLogTerm, false),
-      Leader,
-      Data),
-    {next_state, leader, Data};
-
-leader({append_entries_response, #{success := false,
-                                   prev_log_index := LastIndex,
-                                   follower := Follower}},
-       #{next_indexes := NextIndexes} = Data) ->
-    {next_state, leader, Data#{next_indexes := NextIndexes#{Follower := LastIndex + 1}}};
-
-leader({append_entries_response, #{success := true,
-                                   prev_log_index := PrevLogIndex,
-                                   follower := Follower}},
-       #{match_indexes := Match,
-         next_indexes := Next,
-         last_applied := LastApplied,
-         state_machine := SM,
-         commit_index := Commit0} = Data) ->
-
-    case commit_index_majority(Match#{Follower => PrevLogIndex}, Commit0) of
-        Commit1 when Commit1 > LastApplied ->
-            {next_state,
-             leader,
-             Data#{state_machine => sm_apply(
-                                      LastApplied + 1,
-                                      Commit1,
-                                      SM),
-                   match_indexes := Match#{Follower => PrevLogIndex},
-                   next_indexes := Next#{Follower => PrevLogIndex + 1},
-                   commit_index => Commit1,
-                   last_applied => Commit1}};
-
-        _ ->
-            {next_state,
-             leader,
-             Data#{
-               match_indexes := Match#{Follower => PrevLogIndex},
-               next_indexes := Next#{Follower => PrevLogIndex + 1}}}
-    end;
-
-leader(end_of_term, #{term := T0, commit_index := CI, id := Id,
-                      next_indexes := NI,
-                      last_applied := LA} = D0) ->
-    T1 = raft_ps:increment(Id, T0),
-    {next_state, leader,
-     end_of_term(
-       D0#{
-         term => T1,
-         next_indexes := maps:fold(
-                           fun
-                               (Follower, Index, A) when LA >= Index ->
-                                   Entries = [raft_log:read(I) ||
-                                                 I <-lists:seq(Index, LA)],
-                                   send(
-                                     raft_rpc:append_entries(
-                                       T1,
-                                       Id,
-                                       Index-1,
-                                       raft_log:term_for_index(Index-1),
-                                       CI,
-                                       Entries),
-                                     Follower,
-                                     D0),
-                                   A#{Follower => LA+1};
-
-                               (Follower, Index, A) ->
-                                   send(
-                                     raft_rpc:append_entries(
-                                       T1,
-                                       Id,
-                                       Index-1,
-                                       raft_log:term_for_index(Index-1),
-                                       CI,
-                                       []),
-                                     Follower,
-                                     D0),
-                                   A#{Follower => Index}
-                           end,
-                           #{},
-                           NI)})};
-
-leader({vote, #{term := T, elector := Elector, granted := true}},
-       #{term := T, commit_index := CI, next_indexes := NI} = Data) ->
-    {next_state, leader, Data#{next_indexes := NI#{Elector => CI + 1}}};
-
-leader({request_vote, #{term := Term, candidate := Candidate}},
-       #{id := Id, commit_index := CI, next_indexes := NI} = Data) ->
-    send(
-      raft_rpc:vote(Id, Term, false),
-      Candidate,
-      Data),
-    {next_state, leader, Data#{next_indexes := NI#{Candidate => CI + 1}}}.
-
-
-end_of_term(State) ->
+do_end_of_term_after_timeout(State) ->
     after_timeout(end_of_term, raft_timeout:leader(), State).
 
-call_election(State) ->
+do_call_election_after_timeout(State) ->
     after_timeout(call_election, raft_timeout:election(), State).
 
-rerun_election(State) ->
+do_rerun_election_after_timeout(State) ->
     after_timeout(rerun_election, raft_timeout:election(), State).
 
 after_timeout(Event, Timeout, #{timer := Timer} = State) ->
@@ -793,57 +454,43 @@ after_timeout(Event, Timeout, #{timer := Timer} = State) ->
 after_timeout(Event, Timeout, State) ->
     State#{timer => gen_fsm:send_event_after(Timeout, Event)}.
 
+do_apply_to_state_machine(LastApplied, CommitIndex, State) ->
+    do_apply_to_state_machine(lists:seq(LastApplied, CommitIndex), State).
 
-commit_index_majority(Values, CI) ->
-    commit_index_majority(
-      lists:reverse(ordsets:from_list(maps:values(Values))),
-      maps:values(Values),
-      CI).
-
-commit_index_majority([H | T], Values, CI) when H > CI ->
-    case [I || I <- Values, I >= H] of
-        Majority when length(Majority) > (length(Values) / 2) ->
-            H;
-        _ ->
-            commit_index_majority(T, Values, CI)
-    end;
-commit_index_majority(_, _, CI) ->
-    CI.
-
-sm_apply(LastApplied, CommitIndex, State) ->
-    sm_apply(lists:seq(LastApplied, CommitIndex), State).
-
-sm_apply([H | T], undefined) ->
+do_apply_to_state_machine([H | T], undefined) ->
     case raft_log:read(H) of
-        #{command := #{m := M, f := F, a := A}} ->
-            sm_apply(T, apply(M, F, A));
+        #{command := #{f := F, a := A}} ->
+            {_, State} = apply(raft_sm, F, A),
+            do_apply_to_state_machine(T, State);
 
-        #{command := #{m := M, f := F}} ->
-            sm_apply(T, apply(M, F, []))
+        #{command := #{f := F}} ->
+            {_, State} = apply(raft_sm, F, []),
+            do_apply_to_state_machine(T, State)
     end;
 
-sm_apply([H | T], State) ->
+do_apply_to_state_machine([H | T], S0) ->
     case raft_log:read(H) of
-        #{command := #{m := M, f := F, a := A}} ->
-            sm_apply(T, apply(M, F, A ++ [State]));
+        #{command := #{f := F, a := A, from := From}} ->
+            {Result, S1}  = apply(raft_sm, F, A ++ [S0]),
+            gen_fsm:reply(From, Result),
+            do_apply_to_state_machine(T, S1);
 
-        #{command := #{m := M, f := F}} ->
-            sm_apply(T, apply(M, F, [State]))
+        #{command := #{f := F, a := A}} ->
+            {_, S1} = apply(raft_sm, F, A ++ [S0]),
+            do_apply_to_state_machine(T, S1);
+
+        #{command := #{f := F, from := From}} ->
+            {Result, S1} = apply(raft_sm, F, [S0]),
+            gen_fsm:reply(From, Result),
+            do_apply_to_state_machine(T, S1);
+
+        #{command := #{f := F}} ->
+            {_, S1} = apply(raft_sm, F, [S0]),
+            do_apply_to_state_machine(T, S1)
     end;
 
-sm_apply([], State) ->
+do_apply_to_state_machine([], State) ->
     State.
-
-trace(false) ->
-    recon_trace:clear();
-trace(true) ->
-    trace('_');    
-trace(Fn) ->
-    recon_trace:calls({?MODULE, Fn, '_'},
-                      {1000, 500},
-                      [{scope, local},
-                       {pid, all}]).
-
 
 do_demarshall(Pid,
               #{request_vote := #{term := Term,
@@ -947,34 +594,76 @@ eval_or_drop_duplicate_connection(Id, Pid, Eval, #{associations := Associations,
                   associations := Associations#{Id => Pid}}
     end.
 
-broadcast(Message, #{connections := Connections}) ->
+do_broadcast(Message, #{connections := Connections} = Data) ->
     maps:fold(
       fun
           (_, #{sender := Sender}, _) ->
-              Sender(Message);
-
-          (_, #{}, A) ->
-              A
+              Sender(Message)
       end,
       ok,
-      Connections).
+      Connections),
+    Data.
               
-send(Message, Recipient, #{associations := Associations, connections := Connections}) ->
+do_send(Message, Recipient, #{associations := Associations, connections := Connections} = Data) ->
     #{Recipient := Pid} = Associations,
     #{Pid := #{sender := Sender}} = Connections,
-    Sender(Message).
+    Sender(Message),
+    Data.
 
-do_add_connection(Peer, Sender, Closer, #{connections := Connections} = Data) ->
+do_add_connection(Peer, Id, Host, Port, Sender, Closer, #{associations := Associations,
+                                                        connections := Connections} = Data) ->
     monitor(process, Peer),
-    Data#{connections := Connections#{Peer => #{sender => Sender, closer => Closer}}}.
+    Data#{associations := Associations#{Id => Peer},
+          connections := Connections#{Peer => #{sender => Sender,
+                                                closer => Closer,
+                                                host => Host,
+                                                port => Port,
+                                                association => Id}}}.
+
+do_add_connection(Peer, Host, Port, Sender, Closer, #{connections := Connections} = Data) ->
+    monitor(process, Peer),
+    Data#{connections := Connections#{Peer => #{sender => Sender,
+                                                host => Host,
+                                                port => Port,
+                                                closer => Closer}}}.
 
 do_add_server(URI, #{connecting := Connecting} = Data) ->
     case http_uri:parse(URI) of
         {ok, {_, _, Host, Port, Path, _}} ->
             {ok, Peer} = gun:open(Host, Port),
             monitor(process, Peer),
-            Data#{connecting := Connecting#{Peer => Path}, change => #{type => add_server, uri => URI}};
+            Data#{connecting := Connecting#{Peer => Path}, change => #{type => add_server, uri => URI, host => Host, port => Port, path => Path}};
 
         {error, _} ->
             Data
     end.
+
+
+
+do_log(Command, #{id := Id, term := Term, commit_index := CI, next_indexes := NI} = Data) ->
+    LastLogIndex = raft_log:write(Term, Command),
+     Data#{
+       next_indexes := maps:fold(
+                         fun
+                             (Follower, Index, A) when LastLogIndex >= Index ->
+                                 do_send(
+                                   raft_rpc:append_entries(
+                                     Term,
+                                     Id,
+                                     LastLogIndex-1,
+                                     raft_log:term_for_index(LastLogIndex-1),
+                                     CI,
+                                     [#{term => Term, command => Command}]),
+                                   Follower,
+                                   Data),
+                                 A#{Follower => LastLogIndex+1};
+
+                            (Follower, Index, A) ->
+                                 A#{Follower => Index}
+                         end,
+                         #{},
+                         NI)}.
+
+
+quorum(#{associations := Associations}) ->
+    max(raft_config:minimum(quorum), ((map_size(Associations) + 1) div 2) + 1).
