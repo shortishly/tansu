@@ -25,7 +25,6 @@
 -export([ckv_test_and_set/4]).
 -export([commit_index/0]).
 -export([demarshall/2]).
--export([do_add_connection/4]).
 -export([do_add_server/2]).
 -export([do_apply_to_state_machine/3]).
 -export([do_broadcast/2]).
