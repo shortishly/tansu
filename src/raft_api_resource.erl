@@ -37,7 +37,7 @@ init(Req, RaftId, RaftHost, RaftPort, State) ->
     raft_consensus:add_connection(
       self(),
       RaftId,
-      RaftHost,
+      any:to_list(RaftHost),
       any:to_integer(RaftPort),
       outgoing(self()),
       closer(self())),
