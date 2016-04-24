@@ -19,6 +19,7 @@
 -export([content_types_accepted/2]).
 -export([content_types_provided/2]).
 -export([from_form_urlencoded/2]).
+-export([from_json/2]).
 -export([info/3]).
 -export([init/2]).
 -export([resource_exists/2]).
@@ -48,16 +49,26 @@ init(Req, _) ->
     end.
 
 allowed_methods(Req, State) ->
-    {[<<"GET">>, <<"POST">>, <<"PUT">>], Req, State}.
+    {[<<"GET">>, <<"HEAD">>, <<"OPTIONS">>, <<"POST">>, <<"PUT">>], Req, State}.
 
 content_types_accepted(Req, State) ->
-    {[{{<<"application">>, <<"x-www-form-urlencoded">>, []}, from_form_urlencoded}], Req, State}.
+    {[{{<<"application">>, <<"x-www-form-urlencoded">>, []}, from_form_urlencoded},
+      {{<<"application">>, <<"json">>, []}, from_json}], Req, State}.
 
 content_types_provided(Req, State) ->
-    {[{{<<"application">>, <<"json">>, []}, to_json}], Req, State}.
+    {[{{<<"application">>, <<"json">>, '*'}, to_json}], Req, State}.
 
 to_json(Req, #{value := Value} = State) ->
     {jsx:encode(#{value => Value}), Req, State}.
+
+
+from_json(Req, State) ->
+    from_json(cowboy_req:body(Req), <<>>, State).
+
+from_json({ok, Final, Req}, Partial, #{key := Key} = State) ->
+    kv_set(Req, Key, jsx:decode(<<Partial/binary, Final/binary>>), State);
+from_json({more, Part, Req}, Partial, State) ->
+    from_json(cowboy_req:body(Req), <<Partial/binary, Part/binary>>, State).
 
 from_form_urlencoded(Req0, State) ->
     case cowboy_req:body_qs(Req0) of
@@ -69,16 +80,18 @@ from_form_urlencoded(Req0, State) ->
     end.
 
 from_form_url_encoded(Req, #{<<"value">> := Value}, #{key := Key} = State) ->
+    kv_set(Req, Key, Value, State);
+from_form_url_encoded(Req, _, State) ->
+    bad_request(Req, State).
+
+kv_set(Req, Key, Value, State) ->
     case raft_api:kv_set(Key, Value) of
         ok ->
             {true, Req, State};
         
         not_leader ->
             service_unavailable(Req, State)
-    end;
-from_form_url_encoded(Req, _, State) ->
-    bad_request(Req, State).
-
+    end.
 
 
 resource_exists(Req, #{info := #{leader := _}, key := Key} = State) ->
