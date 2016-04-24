@@ -36,7 +36,9 @@
 -export([do_send/3]).
 -export([do_voted_for/1]).
 -export([id/0]).
+-export([info/0]).
 -export([last_applied/0]).
+-export([leader/0]).
 -export([log/1]).
 -export([quorum/1]).
 -export([remove_server/1]).
@@ -117,8 +119,14 @@ add_server(URI) ->
 remove_server(URI) ->
     send_event({remove_server, URI}).
 
+leader() ->
+    sync_send_all_state_event(leader).
+
 id() ->
     sync_send_all_state_event(id).
+
+info() ->
+    sync_send_all_state_event(info).
 
 last_applied() ->
     sync_send_all_state_event(last_applied).
@@ -233,7 +241,7 @@ handle_event(
             {next_state, State, Data};
 
         #{associations := #{}} ->
-            URL = "http://" ++ inet:ntoa(IP) ++ ":" ++ any:to_list(Port) ++ "/api/",
+            URL = "http://" ++ inet:ntoa(IP) ++ ":" ++ any:to_list(Port) ++ raft_config:endpoint(server),
             {next_state, State, do_add_server(URL, Data)}
     end;
 
@@ -253,14 +261,14 @@ handle_sync_event({ckv_get = F, Category, Key}, From, leader, Data) ->
     {next_state, leader, Data};
 
 handle_sync_event({ckv_get, _, _}, _, Name, Data) ->
-    {reply, not_leader, Name, Data};
+    {reply, {error, not_leader}, Name, Data};
 
 handle_sync_event({ckv_set = F, Category, Key, Value}, From, leader, Data) ->
     do_log(#{f => F, a => [Category, Key, Value], from => From}, Data),
     {next_state, leader, Data};
 
 handle_sync_event({ckv_set, _, _, _}, _, Name, Data) ->
-    {reply, not_leader, Name, Data};
+    {reply, {error, not_leader}, Name, Data};
 
 handle_sync_event(last_applied, _From, Name, #{last_applied := LA} = Data) ->
     {reply, LA, Name, Data};
@@ -268,6 +276,16 @@ handle_sync_event(commit_index, _From, Name, #{commit_index := CI} = Data) ->
     {reply, CI, Name, Data};
 handle_sync_event(id, _From, Name, #{id := Id} = Data) ->
     {reply, Id, Name, Data};
+handle_sync_event(leader, _From, leader, #{id := Leader} = Data) ->
+    {reply, Leader, leader, Data};
+handle_sync_event(leader, _From, Name, #{leader := Leader} = Data) ->
+    {reply, Leader, Name, Data};
+handle_sync_event(leader, _From, Name, Data) ->
+    {reply, {error, not_found}, Name, Data};
+
+handle_sync_event(info, _From, Name, Data) ->
+    {reply, do_info(Name, Data), Name, Data};
+
 handle_sync_event(stop, _From, _Name, Data) ->
     {stop, normal, ok, Data}.
 
@@ -362,7 +380,7 @@ handle_info({gun_up, Peer, _}, Name, #{id := Id, connecting := Connecting} = Dat
             {next_state, Name, Data};
 
         error ->
-            {stop, error, Data}
+            {next_state, Name, Data}
     end;
 
 handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{type := add_server, host := Host, port := Port}} = Data) ->
@@ -385,7 +403,7 @@ handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{
                maps:without([change], Data#{connecting := maps:without([Peer], C)}))};
 
         error ->
-            {stop, error, Data}
+            {next_state, Name, Data}
     end;
 
 handle_info({gun_ws, Peer, {binary, Message}}, Name, Data) ->
@@ -667,3 +685,50 @@ do_log(Command, #{id := Id, term := Term, commit_index := CI, next_indexes := NI
 
 quorum(#{associations := Associations}) ->
     max(raft_config:minimum(quorum), ((map_size(Associations) + 1) div 2) + 1).
+
+do_info(State, Data) ->
+    #{State => maps:fold(
+                 fun
+                     (env, Env, A) ->
+                         A#{env => any:to_binary(Env)};
+                     
+                     (connections, Connections, A) ->
+                         A#{connections => connections(Connections)};
+                     
+                     (state_machine, #{system := #{cluster := Cluster}}, A) ->
+                         A#{cluster => Cluster};
+                     
+                     (state_machine, _, A) ->
+                         A;
+                     
+                     (K, V, A) ->
+                         A#{K => V}
+                 end,
+                 #{},
+                 maps:with([against,
+                            commit_index,
+                            connections,
+                            id,
+                            for,
+                            last_applied,
+                            leader,
+                            match_indexes,
+                            next_indexes,
+                            state_machine,
+                            term,
+                            voted_for],
+                           Data))}.
+
+
+connections(Connections) ->
+    maps:fold(
+      fun
+          (_, #{association := Association, host := Host, port := Port}, A) ->
+              A#{Association => #{host => any:to_binary(Host), port => Port}};
+
+          (_, _, A) ->
+              A
+      end,
+      #{},
+      Connections).
+
