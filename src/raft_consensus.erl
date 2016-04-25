@@ -645,6 +645,8 @@ do_add_connection(Peer, Host, Port, Sender, Closer, #{connections := Connections
                                                 port => Port,
                                                 closer => Closer}}}.
 
+do_add_server(_, #{change := _} = Data) ->
+    Data;
 do_add_server(URI, #{connecting := Connecting} = Data) ->
     case http_uri:parse(URI) of
         {ok, {_, _, Host, Port, Path, _}} ->
