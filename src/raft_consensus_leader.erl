@@ -78,7 +78,7 @@ append_entries_response(#{success := true,
         Commit1 when Commit1 > LastApplied ->
             {next_state,
              leader,
-             Data#{state_machine => raft_consensus:do_apply_to_state_machine(
+             Data#{state_machine => do_apply_to_state_machine(
                                       LastApplied + 1,
                                       Commit1,
                                       SM),
@@ -170,9 +170,6 @@ request_vote(#{term := Term, candidate := Candidate},
     {next_state, leader, Data#{next_indexes := NI#{Candidate => CI + 1}}}.
 
 
-
-
-
 commit_index_majority(Values, CI) ->
     commit_index_majority(
       lists:reverse(ordsets:from_list(maps:values(Values))),
@@ -188,3 +185,42 @@ commit_index_majority([H | T], Values, CI) when H > CI ->
     end;
 commit_index_majority(_, _, CI) ->
     CI.
+
+
+do_apply_to_state_machine(LastApplied, CommitIndex, State) ->
+    do_apply_to_state_machine(lists:seq(LastApplied, CommitIndex), State).
+
+do_apply_to_state_machine([H | T], undefined) ->
+    case raft_log:read(H) of
+        #{command := #{f := F, a := A}} ->
+            {_, State} = apply(raft_sm, F, A),
+            do_apply_to_state_machine(T, State);
+
+        #{command := #{f := F}} ->
+            {_, State} = apply(raft_sm, F, []),
+            do_apply_to_state_machine(T, State)
+    end;
+
+do_apply_to_state_machine([H | T], S0) ->
+    case raft_log:read(H) of
+        #{command := #{f := F, a := A, from := From}} ->
+            {Result, S1}  = apply(raft_sm, F, A ++ [S0]),
+            gen_fsm:reply(From, Result),
+            do_apply_to_state_machine(T, S1);
+
+        #{command := #{f := F, a := A}} ->
+            {_, S1} = apply(raft_sm, F, A ++ [S0]),
+            do_apply_to_state_machine(T, S1);
+
+        #{command := #{f := F, from := From}} ->
+            {Result, S1} = apply(raft_sm, F, [S0]),
+            gen_fsm:reply(From, Result),
+            do_apply_to_state_machine(T, S1);
+
+        #{command := #{f := F}} ->
+            {_, S1} = apply(raft_sm, F, [S0]),
+            do_apply_to_state_machine(T, S1)
+    end;
+
+do_apply_to_state_machine([], State) ->
+    State.

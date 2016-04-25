@@ -77,8 +77,11 @@ append_entries(#{entries := [],
         L, Id, T, PrevLogIndex, PrevLogTerm, true),
       L,
       Data),
-    {next_state, follower, raft_consensus:do_call_election_after_timeout(
-                             Data#{term => raft_ps:term(Id, T), leader => L})}.
+    {next_state, follower, maps:without([voted_for,
+                                         for,
+                                         against],
+                                        raft_consensus:do_call_election_after_timeout(
+                                          Data#{term => raft_ps:term(Id, T), leader => L}))}.
 
 request_vote(#{term := T0}, #{term := T1, id := Id} = Data) when T0 > T1 ->
     {next_state,
