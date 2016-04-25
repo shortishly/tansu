@@ -22,6 +22,7 @@
 -export([environment/0]).
 -export([minimum/1]).
 -export([port/1]).
+-export([sm/0]).
 -export([timeout/1]).
 
 can(advertise) ->
@@ -33,6 +34,9 @@ can(mesh) ->
 
 enabled(debug) ->
     envy(to_boolean, debug, false).
+
+sm() ->
+    envy(to_atom, sm, raft_sm_mnesia).
 
 endpoint(server) ->
     envy(to_list, endpoint_server, "/api");

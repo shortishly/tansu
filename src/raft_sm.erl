@@ -13,52 +13,23 @@
 %% limitations under the License.
 
 -module(raft_sm).
--export([ckv_get/3]).
--export([new/0]).
--export([ckv_set/4]).
--export([ckv_test_and_set/5]).
 
-new() ->
-    {ok, #{}}.
+-type state_machine() :: any().
 
+-callback new() -> {ok, StateMachine :: state_machine()} | {error, Reason :: string()}.
 
-ckv_get(Category, Key, StateMachine) ->
-    case StateMachine of
-        #{Category := #{Key := Value}} ->
-            {{ok, Value}, StateMachine};
+-callback ckv_get(Category :: atom(),
+                  Key :: binary(),
+                  StateMachine :: state_machine()) -> {ok, Value :: any()} | {error, Reason :: string()}.
 
-        _ ->
-            {{error, not_found}, StateMachine}
-    end.
+-callback ckv_set(Category :: atom(),
+                  Key :: binary(),
+                  Value :: any(),
+                  StateMachine :: state_machine()) -> {ok, StateMachine :: state_machine()}.
 
-
-ckv_set(Category, Key, Value, StateMachine) ->
-    case StateMachine of
-        #{Category := KVS} ->
-            {ok, StateMachine#{Category := KVS#{Key => Value}}};
-
-        _ ->
-            ckv_set(Category, Key, Value, StateMachine#{Category => #{}})
-    end.
-
-
-ckv_test_and_set(Category, Key, undefined, NewValue, StateMachine) ->
-    case StateMachine of
-        #{Category := #{Key := _}} ->
-            {error, StateMachine};
-
-        #{Category := KVS} ->
-            {ok, StateMachine#{Category := KVS#{Key => NewValue}}};
-        
-        _ ->
-            {ok, StateMachine#{Category => #{Key => NewValue}}}
-    end;
-ckv_test_and_set(Category, Key, ExistingValue, NewValue, StateMachine) ->
-    case StateMachine of
-        #{Category := #{Key := ExistingValue} = KVS} ->
-            {ok, StateMachine#{Category := KVS#{Key => NewValue}}};
-
-        _ ->
-            {error, StateMachine}
-    end.
+-callback ckv_test_and_set(Category :: atom(),
+                           Key :: binary(),
+                           ExistingValue :: any(),
+                           NewValue :: any(),
+                           StateMachine :: state_machine()) -> {ok, StateMachine :: state_machine()} | {error, Reason :: string()}.
 

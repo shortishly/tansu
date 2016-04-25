@@ -155,10 +155,10 @@ appoint_leader(#{term := Term,
 
 
 maybe_init_log(#{state_machine := undefined} = Data) ->
-    raft_consensus:do_log(#{m => raft_sm,
+    raft_consensus:do_log(#{m => raft_config:sm(),
                             f => ckv_set,
                             a => [system, cluster, raft_uuid:new()]},
-                          raft_consensus:do_log(#{m => raft_sm,
+                          raft_consensus:do_log(#{m => raft_config:sm(),
                                                   f => new}, Data));
 
 maybe_init_log(#{state_machine := _} = Data) ->
