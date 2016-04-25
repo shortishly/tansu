@@ -367,7 +367,7 @@ handle_info({'DOWN', _, process, Pid, _}, Name, #{connections := Connections, as
             {next_state, leader, Data}
     end;
 
-handle_info({gun_down, _Peer, ws, _, _, _}, Name, Data) ->
+handle_info({gun_down, _Peer, _, _, _, _}, Name, Data) ->
     {next_state, Name, Data};
 
 handle_info({gun_up, Peer, _}, Name, #{id := Id, connecting := Connecting} = Data) ->
