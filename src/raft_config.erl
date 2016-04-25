@@ -18,6 +18,7 @@
 -export([can/1]).
 -export([db_schema/0]).
 -export([enabled/1]).
+-export([endpoint/1]).
 -export([environment/0]).
 -export([minimum/1]).
 -export([port/1]).
@@ -32,6 +33,11 @@ can(mesh) ->
 
 enabled(debug) ->
     envy(to_boolean, debug, false).
+
+endpoint(server) ->
+    envy(to_list, endpoint_server, "/api");
+endpoint(client) ->
+    envy(to_list, endpoint_server, "/client").
 
 port(http) ->
     envy(to_integer, http_port, 80).
