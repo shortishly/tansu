@@ -12,8 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_api_resource).
-
+-module(raft_api_server_resource).
 
 -export([init/2]).
 -export([terminate/3]).

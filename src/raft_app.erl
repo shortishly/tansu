@@ -20,6 +20,7 @@
 
 -export([create_schema/0]).
 -export([create_tables/0]).
+-export([endpoints/1]).
 -export([start/2]).
 -export([stop/1]).
 
@@ -60,10 +61,30 @@ dispatch(Prefix) ->
 
 
 resources(http) ->
-    [{'_',
-      [{"/api",
-        raft_api_resource,
-        #{}}]}].
+    [{'_', endpoints(server) ++ endpoints(client)}].
+
+
+endpoints(server) ->
+    [endpoint(server, raft_api_server_resource)];
+endpoints(client) ->
+    [endpoint(client, "/keys/[...]", raft_api_client_keys_resource),
+     endpoint(client, "/info", raft_api_client_info_resource),
+     endpoint(client, "/version", raft_api_client_version_resource)].
+
+
+endpoint(Endpoint, Module) ->
+    endpoint(Endpoint, undefined, Module, []).
+
+endpoint(Endpoint, Pattern, Module) ->
+    endpoint(Endpoint, Pattern, Module, []).
+
+endpoint(Endpoint, undefined, Module, Parameters) ->
+    {raft_config:endpoint(Endpoint), Module, Parameters};
+
+endpoint(Endpoint, Pattern, Module, Parameters) ->
+    {raft_config:endpoint(Endpoint) ++ Pattern, Module, Parameters}.
+    
+
 
 create_schema() ->
     case raft_config:db_schema() of
