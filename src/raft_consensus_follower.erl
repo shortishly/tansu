@@ -91,7 +91,7 @@ append_entries(#{entries := Entries,
         {ok, LastIndex} when LeaderCommit > Commit0 ->
             D1 = case min(LeaderCommit, LastIndex) of
                      Commit1 when Commit1 > LastApplied ->
-                         D0#{state_machine => raft_consensus:do_apply_to_state_machine(
+                         D0#{state_machine => do_apply_to_state_machine(
                                                 LastApplied + 1,
                                                 Commit1,
                                                 SM),
@@ -230,3 +230,32 @@ request_vote(#{term := T, candidate := Candidate},
       Candidate,
       Data),
     {next_state, follower, Data}.
+
+
+do_apply_to_state_machine(LastApplied, CommitIndex, State) ->
+    do_apply_to_state_machine(lists:seq(LastApplied, CommitIndex), State).
+
+do_apply_to_state_machine([H | T], undefined) ->
+    case raft_log:read(H) of
+        #{command := #{f := F, a := A}} ->
+            {_, State} = apply(raft_sm, F, A),
+            do_apply_to_state_machine(T, State);
+
+        #{command := #{f := F}} ->
+            {_, State} = apply(raft_sm, F, []),
+            do_apply_to_state_machine(T, State)
+    end;
+
+do_apply_to_state_machine([H | T], S0) ->
+    case raft_log:read(H) of
+        #{command := #{f := F, a := A}} ->
+            {_, S1} = apply(raft_sm, F, A ++ [S0]),
+            do_apply_to_state_machine(T, S1);
+
+        #{command := #{f := F}} ->
+            {_, S1} = apply(raft_sm, F, [S0]),
+            do_apply_to_state_machine(T, S1)
+    end;
+
+do_apply_to_state_machine([], State) ->
+    State.

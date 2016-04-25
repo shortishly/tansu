@@ -26,7 +26,6 @@
 -export([commit_index/0]).
 -export([demarshall/2]).
 -export([do_add_server/2]).
--export([do_apply_to_state_machine/3]).
 -export([do_broadcast/2]).
 -export([do_call_election_after_timeout/1]).
 -export([do_drop_votes/1]).
@@ -471,44 +470,6 @@ after_timeout(Event, Timeout, #{timer := Timer} = State) ->
     after_timeout(Event, Timeout, maps:without([timer], State));
 after_timeout(Event, Timeout, State) ->
     State#{timer => gen_fsm:send_event_after(Timeout, Event)}.
-
-do_apply_to_state_machine(LastApplied, CommitIndex, State) ->
-    do_apply_to_state_machine(lists:seq(LastApplied, CommitIndex), State).
-
-do_apply_to_state_machine([H | T], undefined) ->
-    case raft_log:read(H) of
-        #{command := #{f := F, a := A}} ->
-            {_, State} = apply(raft_sm, F, A),
-            do_apply_to_state_machine(T, State);
-
-        #{command := #{f := F}} ->
-            {_, State} = apply(raft_sm, F, []),
-            do_apply_to_state_machine(T, State)
-    end;
-
-do_apply_to_state_machine([H | T], S0) ->
-    case raft_log:read(H) of
-        #{command := #{f := F, a := A, from := From}} ->
-            {Result, S1}  = apply(raft_sm, F, A ++ [S0]),
-            gen_fsm:reply(From, Result),
-            do_apply_to_state_machine(T, S1);
-
-        #{command := #{f := F, a := A}} ->
-            {_, S1} = apply(raft_sm, F, A ++ [S0]),
-            do_apply_to_state_machine(T, S1);
-
-        #{command := #{f := F, from := From}} ->
-            {Result, S1} = apply(raft_sm, F, [S0]),
-            gen_fsm:reply(From, Result),
-            do_apply_to_state_machine(T, S1);
-
-        #{command := #{f := F}} ->
-            {_, S1} = apply(raft_sm, F, [S0]),
-            do_apply_to_state_machine(T, S1)
-    end;
-
-do_apply_to_state_machine([], State) ->
-    State.
 
 do_demarshall(Pid,
               #{request_vote := #{term := Term,
