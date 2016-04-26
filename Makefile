@@ -15,7 +15,7 @@
 #
 PROJECT = raft
 PROJECT_DESCRIPTION = Raft Consensus
-PROJECT_VERSION = 0.2.0
+PROJECT_VERSION = 0.2.1
 
 DEPS = \
 	cowboy \
