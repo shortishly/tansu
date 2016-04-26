@@ -15,6 +15,7 @@
 -module(raft_consensus_candidate).
 -export([add_server/2]).
 -export([append_entries/2]).
+-export([append_entries_response/2]).
 -export([remove_server/2]).
 -export([request_vote/2]).
 -export([rerun_election/1]).
@@ -82,6 +83,11 @@ append_entries(#{entries := [],
                                          against],
                                         raft_consensus:do_call_election_after_timeout(
                                           Data#{term => raft_ps:term(Id, T), leader => L}))}.
+
+
+append_entries_response(#{term := Term}, #{term := Current} = Data) when Term < Current ->
+    {next_state, candidate, Data}.
+
 
 request_vote(#{term := T0}, #{term := T1, id := Id} = Data) when T0 > T1 ->
     {next_state,

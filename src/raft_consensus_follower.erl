@@ -15,6 +15,7 @@
 -module(raft_consensus_follower).
 -export([add_server/2]).
 -export([append_entries/2]).
+-export([append_entries_response/2]).
 -export([call_election/1]).
 -export([log/2]).
 -export([remove_server/2]).
@@ -132,6 +133,11 @@ append_entries(#{entries := Entries,
                                      D0#{term => raft_ps:term(Id, T),
                                          leader => L})}
     end.
+
+
+append_entries_response(#{term := Term}, #{term := Current} = Data) when Term < Current ->
+    {next_state, follower, Data}.
+
 
 log(Command, #{leader := Leader} = Data) ->
     raft_consensus:do_send(

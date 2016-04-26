@@ -65,6 +65,16 @@ append_entries(#{term := Term,
     {next_state, leader, Data}.
 
 
+append_entries_response(#{term := Term}, #{id := Id, term := Current} = Data) when Term > Current ->
+    {next_state, follower, maps:without(
+                             [match_indexes, next_indexes],
+                             raft_consensus:do_call_election_after_timeout(
+                               raft_consensus:do_drop_votes(
+                                 Data#{term := raft_ps:term(Id, Term)})))};
+
+append_entries_response(#{term := Term}, #{term := Current} = Data) when Term < Current ->
+    {next_state, leader, Data};
+
 append_entries_response(#{success := false,
                           prev_log_index := LastIndex,
                           follower := Follower},
@@ -101,6 +111,7 @@ append_entries_response(#{success := true,
                match_indexes := Match#{Follower => PrevLogIndex},
                next_indexes := Next#{Follower => PrevLogIndex + 1}}}
     end.
+
 
 end_of_term(#{term := T0,
               commit_index := CI,

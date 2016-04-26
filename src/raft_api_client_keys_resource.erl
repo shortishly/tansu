@@ -124,7 +124,7 @@ info({gun_response, _, _, nofin, Status, Headers}, Req, State) ->
     {ok, cowboy_req:chunked_reply(Status, Headers, Req), State};
 
 info({gun_response, _, _, fin, Status, Headers}, Req, State) ->
-    %% short and sweeet, we have final http response from the origin
+    %% short and sweet, we have final http response from the origin
     %% with just status and headers and no response body.
     {stop, cowboy_req:reply(Status, Headers, Req), State};
 
