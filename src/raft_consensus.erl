@@ -326,57 +326,49 @@ handle_info({_,
             Data) ->
     {next_state, Name, Data};
 
-handle_info({'DOWN', _, process, Peer, normal}, Name, #{connecting := Connecting, change := #{type := add_server, uri := URI}} = Data) ->
-    %% unable to connect to peer, possibly due to connectivity not being present
-    case maps:find(Peer, Connecting) of
-        {ok, _Path} ->
-            %% log as an issue connecting to the remote node
-            error_logger:info_report([{module, ?MODULE},
-                                      {line, ?LINE},
-                                      {uri, URI},
-                                      {type, add_server},
-                                      {reason, 'DOWN'}]),
-            {next_state, Name, maps:without([change], Data#{connecting := maps:without([Peer], Connecting)})};
+handle_info({'DOWN', _, process, Pid, _},
+            StateName,
+            #{connecting := Connecting,
+              connections := Connections,
+              associations := Associations,
+              match_indexes := MatchIndexes,
+              next_indexes := NextIndexes} = Data) ->
+    case {Connecting, Connections} of
+        {#{Pid := _}, _} ->
+            {next_state, StateName, maps:without([change], Data#{connecting := maps:without([Pid], Connecting)})};
 
-        error ->
-            {stop, error, Data}
-    end;
-
-handle_info({'DOWN', _, process, Pid, _}, StateName = leader, #{connections := Connections,
-                                                                associations := Associations,
-                                                                match_indexes := MatchIndexes,
-                                                                next_indexes := NextIndexes} = Data) ->
-    %% lost connectivity to a node
-    case Connections of
-        #{Pid := #{association := Association}} ->
+        {_, #{Pid := #{association := Association}}} ->
             {next_state, StateName, Data#{connections := maps:without([Pid], Connections),
                                           match_indexes := maps:without([Association], MatchIndexes),
                                           next_indexes := maps:without([Association], NextIndexes),
                                           associations := maps:without([Association], Associations)}};
 
-        #{Pid := _} ->
+        {_, #{Pid := _}} ->
             {next_state, StateName, Data#{connections := maps:without([Pid], Connections)}};
 
-        #{} ->
-            %% lost connectivity before we really knew anything about
-            %% this node
+        {_, _} ->
             {next_state, StateName, Data}
     end;
 
-handle_info({'DOWN', _, process, Pid, _}, StateName, #{connections := Connections, associations := Associations} = Data) ->
-    %% lost connectivity to a node
-    case Connections of
-        #{Pid := #{association := Association}} ->
+handle_info({'DOWN', _, process, Pid, _},
+            StateName,
+            #{connecting := Connecting,
+              connections := Connections,
+              associations := Associations} = Data) ->
+    case {Connecting, Connections} of
+        {#{Pid := _}, _} ->
+            {next_state, StateName, maps:without([change], Data#{connecting := maps:without([Pid], Connecting)})};
+
+        {_, #{Pid := #{association := Association}}} ->
             {next_state, StateName, Data#{connections := maps:without([Pid], Connections),
                                           associations := maps:without([Association], Associations)}};
 
-        #{Pid := _} ->
+        {_, #{Pid := _}} ->
             {next_state, StateName, Data#{connections := maps:without([Pid], Connections)}};
 
-        #{} ->
-            %% lost connectivity before we really knew anything about
-            %% this node
+        {_, _} ->
             {next_state, StateName, Data}
+
     end;
 
 handle_info({gun_down, _Peer, _, _, _, _}, Name, Data) ->
@@ -583,10 +575,15 @@ do_broadcast(Message, #{connections := Connections} = Data) ->
     Data.
               
 do_send(Message, Recipient, #{associations := Associations, connections := Connections} = Data) ->
-    #{Recipient := Pid} = Associations,
-    #{Pid := #{sender := Sender}} = Connections,
-    Sender(Message),
-    Data.
+    case Associations of
+        #{Recipient := Pid} ->
+            #{Pid := #{sender := Sender}} = Connections,
+            Sender(Message),
+            Data;
+
+        #{} ->
+            Data
+    end.
 
 do_add_connection(Peer, Id, Host, Port, Sender, Closer, #{associations := Associations,
                                                         connections := Connections} = Data) ->
