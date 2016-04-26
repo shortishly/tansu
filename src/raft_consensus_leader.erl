@@ -22,23 +22,26 @@
 -export([request_vote/2]).
 -export([vote/2]).
 
-add_server(_, #{change := _} = Data) ->
+add_server(_, #{change := _, match_indexes := _, next_indexes := _} = Data) ->
     %% change already in progress
     {next_state, leader, Data};
-add_server(URI, Data) ->
+add_server(URI, #{match_indexes := _, next_indexes := _} = Data) ->
     {next_state, leader, raft_consensus:do_add_server(URI, Data)}.
 
-remove_server(_, #{change := _} = Data) ->
+remove_server(_, #{change := _, match_indexes := _, next_indexes := _} = Data) ->
     %% change already in progress
     {next_state, leader, Data}.
 
-log(Command, Data) ->
+log(Command, #{match_indexes := _, next_indexes := _} = Data) ->
     {next_state, leader, raft_consensus:do_log(Command, Data)}.
 
 %% If RPC request or response contains term T > currentTerm: set
 %% currentTerm = T, convert to follower (§5.1)
 %% TODO
-append_entries(#{term := Term}, #{id := Id, term := Current} = Data) when Term > Current ->
+append_entries(#{term := Term}, #{id := Id,
+                                 match_indexes := _,
+                                  next_indexes := _,
+                                  term := Current} = Data) when Term > Current ->
     {next_state, follower, maps:without(
                              [match_indexes, next_indexes],
                              raft_consensus:do_call_election_after_timeout(
@@ -46,10 +49,13 @@ append_entries(#{term := Term}, #{id := Id, term := Current} = Data) when Term >
                                  Data#{term := raft_ps:term(Id, Term)})))};
 
 %% Reply false if term < currentTerm (§5.1)
-append_entries(#{term := Term, leader := Leader},
-               #{term := Current,
+append_entries(#{term := Term,
                  prev_log_index := PrevLogIndex,
                  prev_log_term := PrevLogTerm,
+                 leader := Leader},
+               #{term := Current,
+                 match_indexes := _,
+                 next_indexes := _,
                  id := Id} = Data) when Term < Current ->
     raft_consensus:do_send(
       raft_rpc:append_entries_response(
@@ -62,7 +68,8 @@ append_entries(#{term := Term, leader := Leader},
 append_entries_response(#{success := false,
                           prev_log_index := LastIndex,
                           follower := Follower},
-                        #{next_indexes := NextIndexes} = Data) ->
+                        #{match_indexes := _,
+                          next_indexes := NextIndexes} = Data) ->
     {next_state, leader, Data#{next_indexes := NextIndexes#{Follower := LastIndex + 1}}};
 
 append_entries_response(#{success := true,
@@ -95,7 +102,10 @@ append_entries_response(#{success := true,
                next_indexes := Next#{Follower => PrevLogIndex + 1}}}
     end.
 
-end_of_term(#{term := T0, commit_index := CI, id := Id,
+end_of_term(#{term := T0,
+              commit_index := CI,
+              id := Id,
+              match_indexes := _,
               next_indexes := NI,
               last_applied := LA} = D0) ->
     T1 = raft_ps:increment(Id, T0),
@@ -139,7 +149,10 @@ end_of_term(#{term := T0, commit_index := CI, id := Id,
 %% If RPC request or response contains term T > currentTerm: set
 %% currentTerm = T, convert to follower (§5.1)
 %% TODO
-vote(#{term := Term}, #{id := Id, term := Current} = Data) when Term > Current ->
+vote(#{term := Term}, #{id := Id,
+                        match_indexes := _,
+                        next_indexes := _,
+                        term := Current} = Data) when Term > Current ->
     {next_state, follower, maps:without(
                              [match_indexes, next_indexes],
                              raft_consensus:do_call_election_after_timeout(
@@ -147,22 +160,33 @@ vote(#{term := Term}, #{id := Id, term := Current} = Data) when Term > Current -
                                  Data#{term := raft_ps:term(Id, Term)})))};
 
 vote(#{term := T, elector := Elector, granted := true},
-     #{term := T, commit_index := CI, next_indexes := NI} = Data) ->
+     #{term := T,
+       commit_index := CI,
+       match_indexes := _,
+       next_indexes := NI} = Data) ->
     {next_state, leader, Data#{next_indexes := NI#{Elector => CI + 1}}}.
 
 
 %% If RPC request or response contains term T > currentTerm: set
 %% currentTerm = T, convert to follower (§5.1)
 %% TODO
-request_vote(#{term := Term}, #{id := Id, term := Current} = Data) when Term > Current ->
+request_vote(#{term := Term},
+             #{id := Id,
+               match_indexes := _,
+               next_indexes := _,
+               term := Current} = Data) when Term > Current ->
     {next_state, follower, maps:without(
                              [match_indexes, next_indexes],
                              raft_consensus:do_call_election_after_timeout(
                                raft_consensus:do_drop_votes(
                                  Data#{term := raft_ps:term(Id, Term)})))};
 
-request_vote(#{term := Term, candidate := Candidate},
-             #{id := Id, commit_index := CI, next_indexes := NI} = Data) ->
+request_vote(#{term := Term,
+               candidate := Candidate},
+             #{id := Id,
+               commit_index := CI,
+               match_indexes := _,
+               next_indexes := NI} = Data) ->
     raft_consensus:do_send(
       raft_rpc:vote(Id, Term, false),
       Candidate,
