@@ -129,19 +129,8 @@ info({gun_response, _, _, fin, Status, Headers}, Req, State) ->
     {stop, cowboy_req:reply(Status, Headers, Req), State};
 
 info({gun_data, _, _, nofin, Data}, Req, State) ->
-    %% we have received a response body chunk from the origin,
-    %% chunk and forward to the client.
-    case cowboy_req:chunk(Data, Req) of
-        ok ->
-            %% response has been chunked OK to the client, continue in
-            %% loop
-            {ok, Req, State};
-
-        {error, _} ->
-            %% some error while chunking the response to the client,
-            %% time to hang up the connection and call it a day
-            {stop, Req, State}
-    end;
+    ok = cowboy_req:chunk(Data, Req),
+    {ok, Req, State};
 
 info({gun_data, _, _, fin, Data}, Req, State) ->
     %% we received a final response body chunk from the origin,

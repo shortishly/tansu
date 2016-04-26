@@ -185,7 +185,7 @@ sync_send_all_state_event(Event) ->
 init([]) ->
     Id = raft_ps:id(),
     %% subscribe to mDNS advertisements if we are can mesh
-    [mdns:subscribe(advertisement) || raft_config:can(mesh)],
+    _ = [mdns:subscribe(advertisement) || raft_config:can(mesh)],
     {ok, follower, do_call_election_after_timeout(
                      do_voted_for(
                        #{term => raft_ps:term(Id),
@@ -248,42 +248,55 @@ handle_event(_, _, Data) ->
     {stop, error, Data}.
 
 
-handle_sync_event({ckv_test_and_set = F, Category, Key, ExistingValue, NewValue}, From, leader, Data) ->
+handle_sync_event({ckv_test_and_set = F, Category, Key, ExistingValue, NewValue},
+                  From,
+                  leader = StateName, Data) ->
     do_log(#{f => F, a => [Category, Key, ExistingValue, NewValue], from => From}, Data),
-    {next_state, leader, Data};
+    {next_state, StateName, Data};
 
-handle_sync_event({ckv_test_and_set, _, _, _, _}, _, Name, Data) ->
-    {reply, not_leader, Name, Data};
+handle_sync_event({ckv_test_and_set, _, _, _, _}, _From, StateName, Data) ->
+    {reply, not_leader, StateName, Data};
 
-handle_sync_event({ckv_get = F, Category, Key}, From, leader, Data) ->
+handle_sync_event({ckv_get = F, Category, Key},
+                  From,
+                  leader = StateName, Data) ->
     do_log(#{f => F, a => [Category, Key], from => From}, Data),
-    {next_state, leader, Data};
+    {next_state, StateName, Data};
 
-handle_sync_event({ckv_get, _, _}, _, Name, Data) ->
-    {reply, {error, not_leader}, Name, Data};
+handle_sync_event({ckv_get, _, _},
+                  _From, StateName,
+                  Data) ->
+    {reply, {error, not_leader}, StateName, Data};
 
-handle_sync_event({ckv_set = F, Category, Key, Value}, From, leader, Data) ->
+handle_sync_event({ckv_set = F, Category, Key, Value},
+                  From,
+                  leader = StateName, Data) ->
     do_log(#{f => F, a => [Category, Key, Value], from => From}, Data),
-    {next_state, leader, Data};
+    {next_state, StateName, Data};
 
 handle_sync_event({ckv_set, _, _, _}, _, Name, Data) ->
     {reply, {error, not_leader}, Name, Data};
 
-handle_sync_event(last_applied, _From, Name, #{last_applied := LA} = Data) ->
-    {reply, LA, Name, Data};
-handle_sync_event(commit_index, _From, Name, #{commit_index := CI} = Data) ->
-    {reply, CI, Name, Data};
-handle_sync_event(id, _From, Name, #{id := Id} = Data) ->
-    {reply, Id, Name, Data};
-handle_sync_event(leader, _From, leader, #{id := Leader} = Data) ->
-    {reply, Leader, leader, Data};
-handle_sync_event(leader, _From, Name, #{leader := Leader} = Data) ->
-    {reply, Leader, Name, Data};
-handle_sync_event(leader, _From, Name, Data) ->
-    {reply, {error, not_found}, Name, Data};
+handle_sync_event(last_applied, _From, StateName, #{last_applied := LA} = Data) ->
+    {reply, LA, StateName, Data};
 
-handle_sync_event(info, _From, Name, Data) ->
-    {reply, do_info(Name, Data), Name, Data};
+handle_sync_event(commit_index, _From, StateName, #{commit_index := CI} = Data) ->
+    {reply, CI, StateName, Data};
+
+handle_sync_event(id, _From, StateName, #{id := Id} = Data) ->
+    {reply, Id, StateName, Data};
+
+handle_sync_event(leader, _From, leader = StateName, #{id := Leader} = Data) ->
+    {reply, Leader, StateName, Data};
+
+handle_sync_event(leader, _From, StateName, #{leader := Leader} = Data) ->
+    {reply, Leader, StateName, Data};
+
+handle_sync_event(leader, _From, StateName, Data) ->
+    {reply, {error, not_found}, StateName, Data};
+
+handle_sync_event(info, _From, StateName, Data) ->
+    {reply, do_info(StateName, Data), StateName, Data};
 
 handle_sync_event(stop, _From, _Name, Data) ->
     {stop, normal, ok, Data}.
@@ -329,41 +342,41 @@ handle_info({'DOWN', _, process, Peer, normal}, Name, #{connecting := Connecting
             {stop, error, Data}
     end;
 
-handle_info({'DOWN', _, process, Pid, _}, leader, #{connections := Connections,
-                                                    associations := Associations,
-                                                    match_indexes := MatchIndexes,
-                                                    next_indexes := NextIndexes} = Data) ->
+handle_info({'DOWN', _, process, Pid, _}, StateName = leader, #{connections := Connections,
+                                                                associations := Associations,
+                                                                match_indexes := MatchIndexes,
+                                                                next_indexes := NextIndexes} = Data) ->
     %% lost connectivity to a node
     case Connections of
         #{Pid := #{association := Association}} ->
-            {next_state, leader, Data#{connections := maps:without([Pid], Connections),
-                                       match_indexes := maps:without([Association], MatchIndexes),
-                                       next_indexes := maps:without([Association], NextIndexes),
-                                       associations := maps:without([Association], Associations)}};
+            {next_state, StateName, Data#{connections := maps:without([Pid], Connections),
+                                          match_indexes := maps:without([Association], MatchIndexes),
+                                          next_indexes := maps:without([Association], NextIndexes),
+                                          associations := maps:without([Association], Associations)}};
 
         #{Pid := _} ->
-            {next_state, leader, Data#{connections := maps:without([Pid], Connections)}};
+            {next_state, StateName, Data#{connections := maps:without([Pid], Connections)}};
 
         #{} ->
             %% lost connectivity before we really knew anything about
             %% this node
-            {next_state, leader, Data}
+            {next_state, StateName, Data}
     end;
 
-handle_info({'DOWN', _, process, Pid, _}, Name, #{connections := Connections, associations := Associations} = Data) ->
+handle_info({'DOWN', _, process, Pid, _}, StateName, #{connections := Connections, associations := Associations} = Data) ->
     %% lost connectivity to a node
     case Connections of
         #{Pid := #{association := Association}} ->
-            {next_state, Name, Data#{connections := maps:without([Pid], Connections),
-                                     associations := maps:without([Association], Associations)}};
+            {next_state, StateName, Data#{connections := maps:without([Pid], Connections),
+                                          associations := maps:without([Association], Associations)}};
 
         #{Pid := _} ->
-            {next_state, Name, Data#{connections := maps:without([Pid], Connections)}};
+            {next_state, StateName, Data#{connections := maps:without([Pid], Connections)}};
 
         #{} ->
             %% lost connectivity before we really knew anything about
             %% this node
-            {next_state, leader, Data}
+            {next_state, StateName, Data}
     end;
 
 handle_info({gun_down, _Peer, _, _, _, _}, Name, Data) ->
@@ -425,26 +438,12 @@ follower(Event, Data) when is_atom(Event) ->
     raft_consensus_follower:Event(Data).
 
 
-candidate({#{term := T0} = Event, Detail}, #{term := T1} = Data) when T0 > T1 ->
-    %%  Current terms are exchanged when- ever servers communicate; if
-    %%  one server’s current term is smaller than the other’s, then it
-    %%  updates its current term to the larger value. If a candidate
-    %%  or leader discovers that its term is out of date, it
-    %%  immediately reverts to follower state
-    raft_consensus_follower:Event(Detail, Data);
 candidate({Event, Detail}, Data) ->
     raft_consensus_candidate:Event(Detail, Data);
 candidate(Event, Data) when is_atom(Event) ->
     raft_consensus_candidate:Event(Data).
 
 
-leader({#{term := T0} = Event, Detail}, #{term := T1} = Data) when T0 > T1 ->
-    %%  Current terms are exchanged when- ever servers communicate; if
-    %%  one server’s current term is smaller than the other’s, then it
-    %%  updates its current term to the larger value. If a candidate
-    %%  or leader discovers that its term is out of date, it
-    %%  immediately reverts to follower state
-    raft_consensus_follower:Event(Detail, Data);
 leader({Event, Detail}, Data) ->
     raft_consensus_leader:Event(Detail, Data);
 leader(Event, Data) when is_atom(Event) ->
@@ -466,7 +465,7 @@ do_rerun_election_after_timeout(State) ->
     after_timeout(rerun_election, raft_timeout:election(), State).
 
 after_timeout(Event, Timeout, #{timer := Timer} = State) ->
-    gen_fsm:cancel_timer(Timer),
+    _ = gen_fsm:cancel_timer(Timer),
     after_timeout(Event, Timeout, maps:without([timer], State));
 after_timeout(Event, Timeout, State) ->
     State#{timer => gen_fsm:send_event_after(Timeout, Event)}.

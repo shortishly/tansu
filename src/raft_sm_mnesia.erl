@@ -54,8 +54,8 @@ ckv_get(Category, Key, ?MODULE = StateMachine) ->
 ckv_set(Category, Key, Value, ?MODULE = StateMachine) ->
     {ckv_set(Category, Key, Value), StateMachine}.
 
-ckv_test_and_set(Category, Key, undefined, NewValue, ?MODULE = StateMachine) ->
-    {ckv_test_and_set(Category, Key, undefined, NewValue), StateMachine}.
+ckv_test_and_set(Category, Key, ExistingValue, NewValue, ?MODULE = StateMachine) ->
+    {ckv_test_and_set(Category, Key, ExistingValue, NewValue), StateMachine}.
 
 
     

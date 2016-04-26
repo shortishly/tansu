@@ -107,10 +107,11 @@ vote(#{term := T}, #{id := Id, term := CT} = Data) when T > CT ->
 vote(#{elector := Elector, term := Term, granted := true},
      #{for := For,
        against := Against,
+       connections := Connections,
        associations := Associations,
-       term := Term} = Data) ->
+       term := Term} = Data) when map_size(Connections) == map_size(Associations) ->
 
-    Members = erlang:map_size(Associations) + 1,
+    Members = map_size(Associations) + 1,
     Quorum = raft_consensus:quorum(Data),
 
     case ordsets:add_element(Elector, For) of
@@ -120,6 +121,12 @@ vote(#{elector := Elector, term := Term, granted := true},
         Proposers ->
             {next_state, candidate, Data#{for := Proposers}}
     end;
+
+vote(#{elector := Elector, term := Term, granted := true},
+     #{for := For,
+       term := Term} = Data) ->
+    {next_state, candidate, Data#{for := ordsets:add_element(Elector, For)}};
+
 
 vote(#{elector := Elector, term := Term, granted := false},
      #{against := Against, term := Term} = State) ->

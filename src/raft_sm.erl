@@ -16,20 +16,31 @@
 
 -type state_machine() :: any().
 
--callback new() -> {ok, StateMachine :: state_machine()} | {error, Reason :: string()}.
+-callback new() -> {ok, StateMachine :: state_machine()} |
+                   {error, Reason :: string()} |
+                   {error, Reason :: atom()}.
 
 -callback ckv_get(Category :: atom(),
                   Key :: binary(),
-                  StateMachine :: state_machine()) -> {ok, Value :: any()} | {error, Reason :: string()}.
+                  StateMachine :: state_machine()) -> {{ok, Value :: any()} |
+                                                       {error, Reason :: string()} |
+                                                       {error, Reason :: atom()},
+                                                       StateMachine :: state_machine()}.
 
 -callback ckv_set(Category :: atom(),
                   Key :: binary(),
                   Value :: any(),
-                  StateMachine :: state_machine()) -> {ok, StateMachine :: state_machine()}.
+                  StateMachine :: state_machine()) -> {ok |
+                                                       {error, Reason :: string()} |
+                                                       {error, Reason :: atom()},
+                                                       StateMachine :: state_machine()}.
 
 -callback ckv_test_and_set(Category :: atom(),
                            Key :: binary(),
                            ExistingValue :: any(),
                            NewValue :: any(),
-                           StateMachine :: state_machine()) -> {ok, StateMachine :: state_machine()} | {error, Reason :: string()}.
+                           StateMachine :: state_machine()) -> {ok |
+                                                                {error, Reason :: string()} |
+                                                                {error, Reason :: atom()},
+                                                                StateMachine :: state_machine()}.
 
