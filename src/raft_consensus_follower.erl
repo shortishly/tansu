@@ -244,22 +244,22 @@ do_apply_to_state_machine(LastApplied, CommitIndex, State) ->
 do_apply_to_state_machine([H | T], undefined) ->
     case raft_log:read(H) of
         #{command := #{f := F, a := A}} ->
-            {_, State} = apply(raft_config:sm(), F, A),
+            {_, State} = apply(raft_sm, F, A),
             do_apply_to_state_machine(T, State);
 
         #{command := #{f := F}} ->
-            {_, State} = apply(raft_config:sm(), F, []),
+            {_, State} = apply(raft_sm, F, []),
             do_apply_to_state_machine(T, State)
     end;
 
 do_apply_to_state_machine([H | T], S0) ->
     case raft_log:read(H) of
         #{command := #{f := F, a := A}} ->
-            {_, S1} = apply(raft_config:sm(), F, A ++ [S0]),
+            {_, S1} = apply(raft_sm, F, A ++ [S0]),
             do_apply_to_state_machine(T, S1);
 
         #{command := #{f := F}} ->
-            {_, S1} = apply(raft_config:sm(), F, [S0]),
+            {_, S1} = apply(raft_sm, F, [S0]),
             do_apply_to_state_machine(T, S1)
     end;
 

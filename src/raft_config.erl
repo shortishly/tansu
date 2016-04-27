@@ -36,7 +36,7 @@ enabled(debug) ->
     envy(to_boolean, debug, false).
 
 sm() ->
-    envy(to_atom, sm, raft_sm_mnesia).
+    envy(to_atom, sm, raft_sm_mnesia_kv).
 
 endpoint(server) ->
     envy(to_list, endpoint_server, "/api");
@@ -62,7 +62,12 @@ timeout(election_high) ->
 timeout(leader_low) ->
     envy(to_integer, timeout_leader_low, 500);
 timeout(leader_high) ->
-    envy(to_integer, timeout_leader_high, 1000).
+    envy(to_integer, timeout_leader_high, 1000);
+timeout(kv_expiry) ->
+    envy(to_integer, timeout_kv_expiry, 1000);
+timeout(mnesia_wait_for_tables) ->
+    envy(to_integer, timeout_mnesia_wait_for_tables, 60 * 1000).
+
 
 minimum(quorum) ->
     envy(to_integer, minimum_quorum, 3).

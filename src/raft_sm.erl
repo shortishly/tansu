@@ -13,12 +13,24 @@
 %% limitations under the License.
 
 -module(raft_sm).
+-export([ckv_delete/3]).
+-export([ckv_get/3]).
+-export([ckv_set/4]).
+-export([ckv_set/5]).
+-export([ckv_test_and_set/5]).
+-export([ckv_test_and_set/6]).
+-export([expired/1]).
+-export([new/0]).
 
 -type state_machine() :: any().
 
 -callback new() -> {ok, StateMachine :: state_machine()} |
                    {error, Reason :: string()} |
                    {error, Reason :: atom()}.
+
+
+-callback expired(StateMachine :: state_machine()) -> {[{Category :: atom(), Key :: binary()}], StateMachine :: state_machine()}.
+
 
 -callback ckv_get(Category :: atom(),
                   Key :: binary(),
@@ -42,6 +54,15 @@
                                                        {error, Reason :: atom()},
                                                        StateMachine :: state_machine()}.
 
+-callback ckv_set(Category :: atom(),
+                  Key :: binary(),
+                  Value :: any(),
+                  TTL :: pos_integer(),
+                  StateMachine :: state_machine()) -> {ok |
+                                                       {error, Reason :: string()} |
+                                                       {error, Reason :: atom()},
+                                                       StateMachine :: state_machine()}.
+
 -callback ckv_test_and_set(Category :: atom(),
                            Key :: binary(),
                            ExistingValue :: any(),
@@ -51,3 +72,36 @@
                                                                 {error, Reason :: atom()},
                                                                 StateMachine :: state_machine()}.
 
+-callback ckv_test_and_set(Category :: atom(),
+                           Key :: binary(),
+                           ExistingValue :: any(),
+                           NewValue :: any(),
+                           TTL :: pos_integer(),
+                           StateMachine :: state_machine()) -> {ok |
+                                                                {error, Reason :: string()} |
+                                                                {error, Reason :: atom()},
+                                                                StateMachine :: state_machine()}.
+
+new() ->
+    (raft_config:sm()):new().
+
+ckv_get(Category, Key, StateMachine) ->
+    (raft_config:sm()):ckv_get(Category, Key, StateMachine).
+
+ckv_delete(Category, Key, StateMachine) ->
+    (raft_config:sm()):ckv_delete(Category, Key, StateMachine).
+
+ckv_set(Category, Key, Value, StateMachine) ->
+    (raft_config:sm()):ckv_set(Category, Key, Value, StateMachine).
+
+ckv_set(Category, Key, Value, TTL, StateMachine) ->
+    (raft_config:sm()):ckv_set(Category, Key, Value, TTL, StateMachine).
+
+ckv_test_and_set(Category, Key, ExistingValue, NewValue, StateMachine) ->
+    (raft_config:sm()):ckv_test_and_set(Category, Key, ExistingValue, NewValue, StateMachine).
+
+ckv_test_and_set(Category, Key, ExistingValue, NewValue, TTL, StateMachine) ->
+    (raft_config:sm()):ckv_test_and_set(Category, Key, ExistingValue, NewValue, TTL, StateMachine).
+
+expired(StateMachine) ->
+    (raft_config:sm()):expired(StateMachine).

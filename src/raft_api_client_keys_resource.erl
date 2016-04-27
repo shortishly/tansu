@@ -72,7 +72,24 @@ from_json(Req, State) ->
     from_json(cowboy_req:body(Req), <<>>, State).
 
 from_json({ok, Final, Req}, Partial, #{key := Key} = State) ->
-    kv_set(Req, Key, jsx:decode(<<Partial/binary, Final/binary>>), State);
+    case cowboy_req:header(<<"ttl">>, Req) of
+        undefined ->
+            kv_set(
+              Req,
+              Key,
+              jsx:decode(<<Partial/binary, Final/binary>>),
+              State);
+
+        TTL ->
+            kv_set(
+              Req,
+              Key,
+              jsx:decode(<<Partial/binary, Final/binary>>),
+              binary_to_integer(TTL),
+              State)
+        end;
+
+
 from_json({more, Part, Req}, Partial, State) ->
     from_json(cowboy_req:body(Req), <<Partial/binary, Part/binary>>, State).
 
@@ -86,9 +103,25 @@ from_form_urlencoded(Req0, State) ->
     end.
 
 from_form_url_encoded(Req, #{<<"value">> := Value}, #{key := Key} = State) ->
-    kv_set(Req, Key, Value, State);
+    case cowboy_req:header(<<"ttl">>, Req) of
+        undefined ->
+            kv_set(Req, Key, Value, State);
+
+        TTL ->
+            kv_set(Req, Key, Value, binary_to_integer(TTL), State)
+        end;
+
 from_form_url_encoded(Req, _, State) ->
     bad_request(Req, State).
+
+kv_set(Req, Key, Value, TTL, State) ->
+    case raft_api:kv_set(Key, Value, TTL) of
+        ok ->
+            {true, Req, State};
+        
+        not_leader ->
+            service_unavailable(Req, State)
+    end.
 
 kv_set(Req, Key, Value, State) ->
     case raft_api:kv_set(Key, Value) of
