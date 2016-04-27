@@ -13,10 +13,14 @@
 %% limitations under the License.
 
 -module(raft_api).
+-export([kv_delete/1]).
 -export([kv_get/1]).
 -export([kv_set/2]).
 -export([kv_test_and_set/3]).
 
+
+kv_delete(Key) ->
+    raft_consensus:ckv_delete(category(), Key).
 
 kv_get(Key) ->
     raft_consensus:ckv_get(category(), Key).

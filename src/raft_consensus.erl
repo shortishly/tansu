@@ -20,6 +20,7 @@
 -export([add_server/1]).
 -export([append_entries/6]).
 -export([append_entries_response/5]).
+-export([ckv_delete/2]).
 -export([ckv_get/2]).
 -export([ckv_set/3]).
 -export([ckv_test_and_set/4]).
@@ -139,6 +140,9 @@ ckv_set(Category, Key, Value) ->
 
 ckv_get(Category, Key) ->
     sync_send_all_state_event({ckv_get, Category, Key}).
+
+ckv_delete(Category, Key) ->
+    sync_send_all_state_event({ckv_delete, Category, Key}).
 
 ckv_test_and_set(Category, Key, ExistingValue, NewValue) ->
     sync_send_all_state_event({ckv_test_and_set, Category, Key, ExistingValue, NewValue}).
@@ -267,6 +271,19 @@ handle_sync_event({ckv_get, _, _},
                   _From, StateName,
                   Data) ->
     {reply, {error, not_leader}, StateName, Data};
+
+
+handle_sync_event({ckv_delete = F, Category, Key},
+                  From,
+                  leader = StateName, Data) ->
+    do_log(#{f => F, a => [Category, Key], from => From}, Data),
+    {next_state, StateName, Data};
+
+handle_sync_event({ckv_delete, _, _},
+                  _From, StateName,
+                  Data) ->
+    {reply, {error, not_leader}, StateName, Data};
+
 
 handle_sync_event({ckv_set = F, Category, Key, Value},
                   From,

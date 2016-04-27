@@ -27,6 +27,13 @@
                                                        {error, Reason :: atom()},
                                                        StateMachine :: state_machine()}.
 
+-callback ckv_delete(Category :: atom(),
+                     Key :: binary(),
+                     StateMachine :: state_machine()) -> {ok |
+                                                          {error, Reason :: string()} |
+                                                          {error, Reason :: atom()},
+                                                          StateMachine :: state_machine()}.
+
 -callback ckv_set(Category :: atom(),
                   Key :: binary(),
                   Value :: any(),

@@ -18,6 +18,7 @@
 -export([allowed_methods/2]).
 -export([content_types_accepted/2]).
 -export([content_types_provided/2]).
+-export([delete_resource/2]).
 -export([from_form_urlencoded/2]).
 -export([from_json/2]).
 -export([info/3]).
@@ -49,7 +50,12 @@ init(Req, _) ->
     end.
 
 allowed_methods(Req, State) ->
-    {[<<"GET">>, <<"HEAD">>, <<"OPTIONS">>, <<"POST">>, <<"PUT">>], Req, State}.
+    {[<<"DELETE">>,
+      <<"GET">>,
+      <<"HEAD">>,
+      <<"OPTIONS">>,
+      <<"POST">>,
+      <<"PUT">>], Req, State}.
 
 content_types_accepted(Req, State) ->
     {[{{<<"application">>, <<"x-www-form-urlencoded">>, []}, from_form_urlencoded},
@@ -93,8 +99,10 @@ kv_set(Req, Key, Value, State) ->
             service_unavailable(Req, State)
     end.
 
+delete_resource(Req, #{key := Key} = State) ->
+    {raft_api:kv_delete(Key) == ok, Req, State}.
 
-resource_exists(Req, #{info := #{leader := _}, key := Key} = State) ->
+resource_exists(Req, #{key := Key} = State) ->
     case cowboy_req:method(Req) of
         <<"GET">> ->
             case raft_api:kv_get(Key) of
