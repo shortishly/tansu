@@ -13,6 +13,7 @@
 %% limitations under the License.
 
 -module(raft_sm_maps).
+-export([ckv_delete/3]).
 -export([ckv_get/3]).
 -export([new/0]).
 -export([ckv_set/4]).
@@ -31,6 +32,15 @@ ckv_get(Category, Key, StateMachine) ->
 
         _ ->
             {{error, not_found}, StateMachine}
+    end.
+
+
+ckv_delete(Category, Key, StateMachine) ->
+    case StateMachine of
+        #{Category := KVS} ->
+            {ok, StateMachine#{Category := maps:without([Key], KVS)}};
+        _ ->
+            {ok, StateMachine}
     end.
 
 
