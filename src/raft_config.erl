@@ -66,7 +66,9 @@ timeout(leader_high) ->
 timeout(kv_expiry) ->
     envy(to_integer, timeout_kv_expiry, 1000);
 timeout(mnesia_wait_for_tables) ->
-    envy(to_integer, timeout_mnesia_wait_for_tables, 60 * 1000).
+    envy(to_integer_or_atom, timeout_mnesia_wait_for_tables, infinity);
+timeout(sync_send_event) ->
+    envy(to_integer_or_atom, timeout_sync_send_event, infinity).
 
 
 minimum(quorum) ->

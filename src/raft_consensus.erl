@@ -195,7 +195,8 @@ send_all_state_event(Event) ->
     gen_fsm:send_all_state_event(?MODULE, Event).
 
 sync_send_all_state_event(Event) ->
-    gen_fsm:sync_send_all_state_event(?MODULE, Event, 5000).
+    gen_fsm:sync_send_all_state_event(
+      ?MODULE, Event, raft_config:timeout(sync_send_event)).
 
 
 init([]) ->
@@ -344,6 +345,9 @@ handle_sync_event(leader, _From, StateName, Data) ->
 
 handle_sync_event(info, _From, StateName, Data) ->
     {reply, do_info(StateName, Data), StateName, Data};
+
+handle_sync_event(expired, _From, leader = StateName, #{state_machine := undefined} = Data) ->
+    {reply, {ok, []}, StateName, Data};
 
 handle_sync_event(expired, _From, leader = StateName, #{state_machine := StateMachine} = Data) ->
     {Expired, _} = raft_sm:expired(StateMachine),

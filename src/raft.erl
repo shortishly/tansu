@@ -40,7 +40,6 @@ modules(Application) ->
 trace(true) ->
     ensure_loaded(),
     case recon_trace:calls([m(Module) || Module <- modules()],
-                           {10000, 500},
                            [{scope, local},
                             {pid, all}]) of
         Matches when Matches > 0 ->
