@@ -264,7 +264,7 @@ terminate(_Reason, _Req, #{origin := Origin}) ->
 
 terminate(_Reason, _Req, _) ->
     %% nothing to clean up here.
-    ok.
+    raft_sm:goodbye().
 
 
 maybe_request_body(Req, State, Origin, Path, QS) ->

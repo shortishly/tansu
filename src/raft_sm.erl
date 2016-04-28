@@ -21,6 +21,7 @@
 -export([ckv_test_and_set/5]).
 -export([ckv_test_and_set/6]).
 -export([expired/1]).
+-export([goodbye/0]).
 -export([new/0]).
 -export([notify/3]).
 -export([subscribe/2]).
@@ -113,16 +114,40 @@ expired(StateMachine) ->
 
 
 subscribe(Category, Key) ->
-    gproc:reg({p, l, {?MODULE, {Category, Key}}}).
+    gproc:reg(key(Category, Key)).
 
 unsubscribe(Category, Key) ->
-    gproc:unreg({p, l, {?MODULE, {Category, Key}}}).
+    gproc:unreg(key(Category, Key)).
 
 notify(Category, Key, Data) when map_size(Data) == 1 ->
     [Event] = maps:keys(Data),
-    gproc:send({p, l, {?MODULE, {Category, Key}}},
+    gproc:send(key(Category, Key),
                #{module => ?MODULE,
                  id => erlang:unique_integer(),
                  event => Event,
-                 data => Data}).
+                 data => Data#{category => Category, key => path(Key)}});
+
+notify(Category, Key, #{id := Id, event := Event} = Data) ->
+    gproc:send(key(Category, Key),
+               #{module => ?MODULE,
+                 id => Id,
+                 event => Event,
+                 data => maps:without([id, event], Data#{category => Category, key => path(Key)})});
+
+notify(Category, Key, #{event := Event} = Data) ->
+    gproc:send(key(Category, Key),
+               #{module => ?MODULE,
+                 id => erlang:unique_integer(),
+                 event => Event,
+                 data => maps:without([event], Data#{category => Category, key => path(Key)})}).
+
+path([]) ->
+    <<>>;
+path([H | T]) ->
+    <<"/", H/bytes, (path(T))/bytes>>.
+
+key(Category, Key) ->
+    {p, l, {?MODULE, {Category, Key}}}.
     
+goodbye() ->
+    gproc:goodbye().

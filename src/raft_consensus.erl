@@ -712,9 +712,6 @@ do_info(State, Data) ->
                      (connections, Connections, A) ->
                          A#{connections => connections(Connections)};
                      
-                     (state_machine, #{system := #{cluster := Cluster}}, A) ->
-                         A#{cluster => Cluster};
-                     
                      (state_machine, _, A) ->
                          A;
                      
