@@ -23,7 +23,9 @@
 -export([ckv_delete/2]).
 -export([ckv_get/2]).
 -export([ckv_set/3]).
+-export([ckv_set/4]).
 -export([ckv_test_and_set/4]).
+-export([ckv_test_and_set/5]).
 -export([commit_index/0]).
 -export([demarshall/2]).
 -export([do_add_server/2]).
@@ -35,6 +37,7 @@
 -export([do_rerun_election_after_timeout/1]).
 -export([do_send/3]).
 -export([do_voted_for/1]).
+-export([expired/0]).
 -export([id/0]).
 -export([info/0]).
 -export([last_applied/0]).
@@ -125,6 +128,9 @@ leader() ->
 id() ->
     sync_send_all_state_event(id).
 
+expired() ->
+    sync_send_all_state_event(expired).
+
 info() ->
     sync_send_all_state_event(info).
 
@@ -138,6 +144,9 @@ commit_index() ->
 ckv_set(Category, Key, Value) ->
     sync_send_all_state_event({ckv_set, Category, Key, Value}).
 
+ckv_set(Category, Key, Value, TTL) ->
+    sync_send_all_state_event({ckv_set, Category, Key, Value, TTL}).
+
 ckv_get(Category, Key) ->
     sync_send_all_state_event({ckv_get, Category, Key}).
 
@@ -146,6 +155,9 @@ ckv_delete(Category, Key) ->
 
 ckv_test_and_set(Category, Key, ExistingValue, NewValue) ->
     sync_send_all_state_event({ckv_test_and_set, Category, Key, ExistingValue, NewValue}).
+
+ckv_test_and_set(Category, Key, ExistingValue, NewValue, TTL) ->
+    sync_send_all_state_event({ckv_test_and_set, Category, Key, ExistingValue, NewValue, TTL}).
     
     
     
@@ -183,7 +195,8 @@ send_all_state_event(Event) ->
     gen_fsm:send_all_state_event(?MODULE, Event).
 
 sync_send_all_state_event(Event) ->
-    gen_fsm:sync_send_all_state_event(?MODULE, Event, 5000).
+    gen_fsm:sync_send_all_state_event(
+      ?MODULE, Event, raft_config:timeout(sync_send_event)).
 
 
 init([]) ->
@@ -261,17 +274,18 @@ handle_sync_event({ckv_test_and_set = F, Category, Key, ExistingValue, NewValue}
 handle_sync_event({ckv_test_and_set, _, _, _, _}, _From, StateName, Data) ->
     {reply, not_leader, StateName, Data};
 
-handle_sync_event({ckv_get = F, Category, Key},
+handle_sync_event({ckv_test_and_set = F, Category, Key, ExistingValue, NewValue, TTL},
                   From,
                   leader = StateName, Data) ->
-    do_log(#{f => F, a => [Category, Key], from => From}, Data),
+    do_log(#{f => F, a => [Category, Key, ExistingValue, NewValue, TTL], from => From}, Data),
     {next_state, StateName, Data};
 
-handle_sync_event({ckv_get, _, _},
-                  _From, StateName,
-                  Data) ->
-    {reply, {error, not_leader}, StateName, Data};
+handle_sync_event({ckv_test_and_set, _, _, _, _, _}, _From, StateName, Data) ->
+    {reply, not_leader, StateName, Data};
 
+handle_sync_event({ckv_get, Category, Key}, _, StateName, #{state_machine := StateMachine} = Data) ->
+    {Result, StateMachine} = raft_sm:ckv_get(Category, Key, StateMachine),
+    {reply, Result, StateName, Data};
 
 handle_sync_event({ckv_delete = F, Category, Key},
                   From,
@@ -294,6 +308,15 @@ handle_sync_event({ckv_set = F, Category, Key, Value},
 handle_sync_event({ckv_set, _, _, _}, _, Name, Data) ->
     {reply, {error, not_leader}, Name, Data};
 
+handle_sync_event({ckv_set = F, Category, Key, Value, TTL},
+                  From,
+                  leader = StateName, Data) ->
+    do_log(#{f => F, a => [Category, Key, Value, TTL], from => From}, Data),
+    {next_state, StateName, Data};
+
+handle_sync_event({ckv_set, _, _, _, _}, _, Name, Data) ->
+    {reply, {error, not_leader}, Name, Data};
+
 handle_sync_event(last_applied, _From, StateName, #{last_applied := LA} = Data) ->
     {reply, LA, StateName, Data};
 
@@ -314,6 +337,16 @@ handle_sync_event(leader, _From, StateName, Data) ->
 
 handle_sync_event(info, _From, StateName, Data) ->
     {reply, do_info(StateName, Data), StateName, Data};
+
+handle_sync_event(expired, _From, leader = StateName, #{state_machine := undefined} = Data) ->
+    {reply, {ok, []}, StateName, Data};
+
+handle_sync_event(expired, _From, leader = StateName, #{state_machine := StateMachine} = Data) ->
+    {Expired, _} = raft_sm:expired(StateMachine),
+    {reply, {ok, Expired}, StateName, Data};
+
+handle_sync_event(expired, _From, StateName, Data) ->
+    {reply, {error, not_leader}, StateName, Data};
 
 handle_sync_event(stop, _From, _Name, Data) ->
     {stop, normal, ok, Data}.
@@ -670,9 +703,6 @@ do_info(State, Data) ->
                      
                      (connections, Connections, A) ->
                          A#{connections => connections(Connections)};
-                     
-                     (state_machine, #{system := #{cluster := Cluster}}, A) ->
-                         A#{cluster => Cluster};
                      
                      (state_machine, _, A) ->
                          A;

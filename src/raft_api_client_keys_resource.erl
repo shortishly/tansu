@@ -28,24 +28,51 @@
 -export([to_json/2]).
 
 init(Req, _) ->
-    case raft_consensus:info() of
-        #{follower := #{connections := Connections, leader := Leader}} ->
+    case {cowboy_req:method(Req), raft_consensus:info(), maps:from_list(cowboy_req:parse_qs(Req))} of
+        {<<"GET">>, Info, #{<<"stream">> := <<"true">>}} ->
+            %% An event stream can be established with any member of
+            %% the cluster.
+	    Headers = [{<<"content-type">>, <<"text/event-stream">>},
+		       {<<"cache-control">>, <<"no-cache">>}],
+            raft_api:kv_subscribe(cowboy_req:path_info(Req)),
+	    {cowboy_loop,
+             cowboy_req:chunked_reply(200, Headers, Req),
+             #{info => Info}};
+
+        {<<"GET">>, #{follower := #{leader := _}} = Info, _} ->
+            %% followers with an established leader can handle simple
+            %% KV GET requests.
+            {cowboy_rest,
+             Req,
+             #{info => Info,
+               path => cowboy_req:path(Req),
+               key => cowboy_req:path_info(Req)}};
+
+        {_, #{follower := #{connections := Connections, leader := Leader}}, _} ->
+            %% Requests other than GETs should be proxied to the
+            %% leader.
             case Connections of
                 #{Leader := #{host := Host, port := Port}} ->
                     {ok, Origin} = gun:open(binary_to_list(Host), Port, #{transport => tcp}),
                     {cowboy_loop, Req, #{monitor => erlang:monitor(process, Origin),
                                          origin => Origin,
+                                         qs => cowboy_req:qs(Req),
                                          path => cowboy_req:path(Req)}};
                 #{} ->
                     service_unavailable(Req, #{})
             end;
 
-        #{leader := _} = Info ->
-            {cowboy_rest, Req, #{info => Info,
-                                 path => cowboy_req:path(Req),
-                                 key => cowboy_req:path_info(Req)}};
+        {_, #{leader := _} = Info, _} ->
+            %% The leader can deal directly with any request.
+            {cowboy_rest,
+             Req,
+             #{info => Info,
+               path => cowboy_req:path(Req),
+               key => cowboy_req:path_info(Req)}};
 
-        #{} ->
+        {_, #{}, _} ->
+            %% Neither a leader nor a follower with an established
+            %% leader then the service is unavailable.
             service_unavailable(Req, #{})
     end.
 
@@ -72,7 +99,32 @@ from_json(Req, State) ->
     from_json(cowboy_req:body(Req), <<>>, State).
 
 from_json({ok, Final, Req}, Partial, #{key := Key} = State) ->
-    kv_set(Req, Key, jsx:decode(<<Partial/binary, Final/binary>>), State);
+    case cowboy_req:header(<<"ttl">>, Req) of
+        undefined ->
+            kv_set(
+              Req,
+              Key,
+              jsx:decode(<<Partial/binary, Final/binary>>),
+              State);
+
+        TTL ->
+            try
+                kv_set(
+                  Req,
+                  Key,
+                  jsx:decode(<<Partial/binary, Final/binary>>),
+                  binary_to_integer(TTL),
+                  State)
+            catch
+                error:badarg ->
+                    kv_set(
+                      Req,
+                      Key,
+                      jsx:decode(<<Partial/binary, Final/binary>>),
+                      State)
+            end
+    end;
+
 from_json({more, Part, Req}, Partial, State) ->
     from_json(cowboy_req:body(Req), <<Partial/binary, Part/binary>>, State).
 
@@ -86,9 +138,39 @@ from_form_urlencoded(Req0, State) ->
     end.
 
 from_form_url_encoded(Req, #{<<"value">> := Value}, #{key := Key} = State) ->
-    kv_set(Req, Key, Value, State);
+    case cowboy_req:header(<<"ttl">>, Req) of
+        undefined ->
+            kv_set(Req, Key, Value, State);
+
+        TTL ->
+            try
+                kv_set(
+                  Req,
+                  Key,
+                  Value,
+                  binary_to_integer(TTL),
+                  State)
+            catch
+                error:badarg ->
+                    kv_set(
+                      Req,
+                      Key,
+                      Value,
+                      State)
+            end
+    end;
+
 from_form_url_encoded(Req, _, State) ->
     bad_request(Req, State).
+
+kv_set(Req, Key, Value, TTL, State) ->
+    case raft_api:kv_set(Key, Value, TTL) of
+        ok ->
+            {true, Req, State};
+        
+        not_leader ->
+            service_unavailable(Req, State)
+    end.
 
 kv_set(Req, Key, Value, State) ->
     case raft_api:kv_set(Key, Value) of
@@ -121,10 +203,22 @@ resource_exists(Req, #{key := Key} = State) ->
     end.
 
 
-info({gun_up, Origin, _}, Req, #{path := Path, origin := Origin} = State) ->
+info(#{id := Id, event := Event, data := Data,module := raft_sm}, Req, State) ->
+    {cowboy_req:chunk(
+       ["id: ",
+        any:to_list(Id),
+        "\nevent: ",
+        any:to_list(Event),
+        "\ndata: ",
+        jsx:encode(Data), "\n\n"],
+       Req),
+     Req,
+     State};
+
+info({gun_up, Origin, _}, Req, #{path := Path, qs := QS, origin := Origin} = State) ->
     %% A http connection to origin is up and available, proxy
     %% client request through to the origin.
-    {ok, Req, maybe_request_body(Req, State, Origin, Path)};
+    {ok, Req, maybe_request_body(Req, State, Origin, Path, QS)};
 
 info({gun_response, _, _, nofin, Status, Headers}, Req, State) ->
     %% We have an initial http response from the origin together with
@@ -184,21 +278,28 @@ terminate(_Reason, _Req, #{origin := Origin}) ->
 
 terminate(_Reason, _Req, _) ->
     %% nothing to clean up here.
-    ok.
+    raft_sm:goodbye().
 
 
-maybe_request_body(Req, State, Origin, Path) ->
+maybe_request_body(Req, State, Origin, Path, QS) ->
     %% Proxy the http request through to the origin, and start
     %% streaming the request body from the client is there is one.
-    maybe_request_body(Req, State#{request => proxy(Req, Origin, Path)}).
+    maybe_request_body(Req, State#{request => proxy(Req, Origin, Path, QS)}).
 
 
-proxy(Req, Origin, Path) ->
+proxy(Req, Origin, Path, <<>>) ->
     %% Act as a proxy for a http request to the origin from the
     %% client.
     Method = cowboy_req:method(Req),
     Headers = cowboy_req:headers(Req),
-    gun:request(Origin, Method, Path, Headers).
+    gun:request(Origin, Method, Path, Headers);
+
+proxy(Req, Origin, Path, QS) ->
+    %% Act as a proxy for a http request to the origin from the
+    %% client.
+    Method = cowboy_req:method(Req),
+    Headers = cowboy_req:headers(Req),
+    gun:request(Origin, Method, <<Path/bytes, "?", QS/bytes>>, Headers).
 
 
 maybe_request_body(Req, State) ->

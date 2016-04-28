@@ -17,3 +17,4 @@ elvis
 elvis.config
 \#*\#
 *.log
+.fuse*
