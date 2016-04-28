@@ -28,10 +28,29 @@
 -export([to_json/2]).
 
 init(Req, _) ->
-    error_logger:info_report([{qs, cowboy_req:parse_qs(Req)}]),
+    case {cowboy_req:method(Req), raft_consensus:info(), maps:from_list(cowboy_req:parse_qs(Req))} of
+        {<<"GET">>, Info, #{<<"stream">> := <<"true">>}} ->
+            %% An event stream can be established with any member of
+            %% the cluster.
+	    Headers = [{<<"content-type">>, <<"text/event-stream">>},
+		       {<<"cache-control">>, <<"no-cache">>}],
+            raft_api:kv_subscribe(cowboy_req:path_info(Req)),
+	    {cowboy_loop,
+             cowboy_req:chunked_reply(200, Headers, Req),
+             #{info => Info}};
 
-    case {raft_consensus:info(), maps:from_list(cowboy_req:parse_qs(Req))} of
-        {#{follower := #{connections := Connections, leader := Leader}}, _} ->
+        {<<"GET">>, #{follower := #{leader := _}} = Info, _} ->
+            %% followers with an established leader can handle simple
+            %% KV GET requests.
+            {cowboy_rest,
+             Req,
+             #{info => Info,
+               path => cowboy_req:path(Req),
+               key => cowboy_req:path_info(Req)}};
+
+        {_, #{follower := #{connections := Connections, leader := Leader}}, _} ->
+            %% Requests other than GETs should be proxied to the
+            %% leader.
             case Connections of
                 #{Leader := #{host := Host, port := Port}} ->
                     {ok, Origin} = gun:open(binary_to_list(Host), Port, #{transport => tcp}),
@@ -43,22 +62,17 @@ init(Req, _) ->
                     service_unavailable(Req, #{})
             end;
 
-        {#{leader := _} = Info, #{<<"stream">> := <<"true">>}} ->
-	    Headers = [{<<"content-type">>, <<"text/event-stream">>},
-		       {<<"cache-control">>, <<"no-cache">>}],
-            raft_api:kv_subscribe(cowboy_req:path_info(Req)),
-	    {cowboy_loop,
-             cowboy_req:chunked_reply(200, Headers, Req),
-             #{info => Info}};
-
-        {#{leader := _} = Info, _} ->
+        {_, #{leader := _} = Info, _} ->
+            %% The leader can deal directly with any request.
             {cowboy_rest,
              Req,
              #{info => Info,
                path => cowboy_req:path(Req),
                key => cowboy_req:path_info(Req)}};
 
-        {#{}, _} ->
+        {_, #{}, _} ->
+            %% Neither a leader nor a follower with an established
+            %% leader then the service is unavailable.
             service_unavailable(Req, #{})
     end.
 

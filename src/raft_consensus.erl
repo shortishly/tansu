@@ -283,17 +283,9 @@ handle_sync_event({ckv_test_and_set = F, Category, Key, ExistingValue, NewValue,
 handle_sync_event({ckv_test_and_set, _, _, _, _, _}, _From, StateName, Data) ->
     {reply, not_leader, StateName, Data};
 
-handle_sync_event({ckv_get = F, Category, Key},
-                  From,
-                  leader = StateName, Data) ->
-    do_log(#{f => F, a => [Category, Key], from => From}, Data),
-    {next_state, StateName, Data};
-
-handle_sync_event({ckv_get, _, _},
-                  _From, StateName,
-                  Data) ->
-    {reply, {error, not_leader}, StateName, Data};
-
+handle_sync_event({ckv_get, Category, Key}, _, StateName, #{state_machine := StateMachine} = Data) ->
+    {Result, StateMachine} = raft_sm:ckv_get(Category, Key, StateMachine),
+    {reply, Result, StateName, Data};
 
 handle_sync_event({ckv_delete = F, Category, Key},
                   From,
