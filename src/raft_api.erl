@@ -13,11 +13,19 @@
 %% limitations under the License.
 
 -module(raft_api).
+-export([info/0]).
 -export([kv_delete/1]).
 -export([kv_get/1]).
 -export([kv_set/2]).
+-export([kv_set/3]).
+-export([kv_subscribe/1]).
 -export([kv_test_and_set/3]).
+-export([kv_test_and_set/4]).
+-export([kv_unsubscribe/1]).
 
+
+info() ->
+    raft_consensus:info().
 
 kv_delete(Key) ->
     raft_consensus:ckv_delete(category(), Key).
@@ -28,8 +36,20 @@ kv_get(Key) ->
 kv_set(Key, Value) ->
     raft_consensus:ckv_set(category(), Key, Value).
 
+kv_set(Key, Value, TTL) ->
+    raft_consensus:ckv_set(category(), Key, Value, TTL).
+
 kv_test_and_set(Key, ExistingValue, NewValue) ->
     raft_consensus:ckv_test_and_set(category(), Key, ExistingValue, NewValue).
+
+kv_test_and_set(Key, ExistingValue, NewValue, TTL) ->
+    raft_consensus:ckv_test_and_set(category(), Key, ExistingValue, NewValue, TTL).
+
+kv_subscribe(Key) ->
+    raft_sm:subscribe(category(), Key).
+
+kv_unsubscribe(Key) ->
+    raft_sm:unsubscribe(category(), Key).
 
 category() ->
     user.

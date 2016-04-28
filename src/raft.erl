@@ -30,14 +30,16 @@ ensure_loaded() ->
 
 
 modules() ->
-    {ok, Modules} = application:get_key(?MODULE, modules),
+    modules(?MODULE) ++ modules(mnesia).
+
+modules(Application) ->
+    {ok, Modules} = application:get_key(Application, modules),
     Modules.
 
 
 trace(true) ->
     ensure_loaded(),
     case recon_trace:calls([m(Module) || Module <- modules()],
-                           {1000, 500},
                            [{scope, local},
                             {pid, all}]) of
         Matches when Matches > 0 ->

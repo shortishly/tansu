@@ -22,7 +22,8 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-    {ok, {#{}, [worker(raft_consensus)]}}.
+    {ok, {#{}, [worker(raft_consensus),
+                worker(raft_kv_expiry)]}}.
 
 worker(Module) ->
     worker(Module, transient).

@@ -175,7 +175,11 @@ vote(#{term := T, elector := Elector, granted := true},
        commit_index := CI,
        match_indexes := _,
        next_indexes := NI} = Data) ->
-    {next_state, leader, Data#{next_indexes := NI#{Elector => CI + 1}}}.
+    {next_state, leader, Data#{next_indexes := NI#{Elector => CI + 1}}};
+
+vote(#{term := T, elector := Elector, granted := false},
+     #{term := T, against := Against} = Data) ->
+    {next_state, leader, Data#{against := [Elector | Against]}}.
 
 
 %% If RPC request or response contains term T > currentTerm: set
@@ -228,32 +232,32 @@ do_apply_to_state_machine(LastApplied, CommitIndex, State) ->
 do_apply_to_state_machine([H | T], undefined) ->
     case raft_log:read(H) of
         #{command := #{f := F, a := A}} ->
-            {_, State} = apply(raft_config:sm(), F, A),
+            {_, State} = apply(raft_sm, F, A),
             do_apply_to_state_machine(T, State);
 
         #{command := #{f := F}} ->
-            {_, State} = apply(raft_config:sm(), F, []),
+            {_, State} = apply(raft_sm, F, []),
             do_apply_to_state_machine(T, State)
     end;
 
 do_apply_to_state_machine([H | T], S0) ->
     case raft_log:read(H) of
         #{command := #{f := F, a := A, from := From}} ->
-            {Result, S1}  = apply(raft_config:sm(), F, A ++ [S0]),
+            {Result, S1}  = apply(raft_sm, F, A ++ [S0]),
             gen_fsm:reply(From, Result),
             do_apply_to_state_machine(T, S1);
 
         #{command := #{f := F, a := A}} ->
-            {_, S1} = apply(raft_config:sm(), F, A ++ [S0]),
+            {_, S1} = apply(raft_sm, F, A ++ [S0]),
             do_apply_to_state_machine(T, S1);
 
         #{command := #{f := F, from := From}} ->
-            {Result, S1} = apply(raft_config:sm(), F, [S0]),
+            {Result, S1} = apply(raft_sm, F, [S0]),
             gen_fsm:reply(From, Result),
             do_apply_to_state_machine(T, S1);
 
         #{command := #{f := F}} ->
-            {_, S1} = apply(raft_config:sm(), F, [S0]),
+            {_, S1} = apply(raft_sm, F, [S0]),
             do_apply_to_state_machine(T, S1)
     end;
 
