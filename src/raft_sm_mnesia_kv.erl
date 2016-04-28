@@ -17,10 +17,8 @@
 -export([ckv_get/3]).
 -export([ckv_set/4]).
 -export([ckv_set/5]).
--export([ckv_subscribe/3]).
 -export([ckv_test_and_set/5]).
 -export([ckv_test_and_set/6]).
--export([ckv_unsubscribe/3]).
 -export([expired/1]).
 -export([new/0]).
 
@@ -84,12 +82,6 @@ ckv_test_and_set(Category, Key, ExistingValue, NewValue, ?MODULE = StateMachine)
 ckv_test_and_set(Category, Key, ExistingValue, NewValue, TTL, ?MODULE = StateMachine) ->
     {do_test_and_set(Category, Key, ExistingValue, NewValue, TTL), StateMachine}.
 
-ckv_subscribe(Category, Key, ?MODULE = StateMachine) ->
-    {do_subscribe(Category, Key), StateMachine}.
-
-ckv_unsubscribe(Category, Key, ?MODULE = StateMachine) ->
-    {do_unsubscribe(Category, Key), StateMachine}.
-
 expired(?MODULE = StateMachine) ->
     {do_expired(), StateMachine}.
 
@@ -150,10 +142,11 @@ do_set(Category, Key, Value) ->
               cancel_expiry(Category, Key),
               mnesia:write(#?MODULE{key = {Category, Key},
                                     value = Value,
-                                    parent = {Category, parent(Key)}})
+                                    parent = {Category, parent(Key)}}),
+              raft_sm:notify(Category, Key, #{set => Value}),
+              ok
       end).
-
-
+    
 do_set(Category, Key, Value, TTL) ->
     activity(
       fun
@@ -244,13 +237,6 @@ do_test_and_set(Category, Key, ExistingValue, NewValue, TTL) ->
                       error
               end
       end).
-
-
-do_subscribe(Category, Key) ->
-    gproc:reg({p, l, {?MODULE, {Category, Key}}}).
-
-do_unsubscribe(Category, Key) ->
-    gproc:unreg({p, l, {?MODULE, {Category, Key}}}).
 
 do_expired() ->
     activity(

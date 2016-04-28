@@ -46,10 +46,10 @@ kv_test_and_set(Key, ExistingValue, NewValue, TTL) ->
     raft_consensus:ckv_test_and_set(category(), Key, ExistingValue, NewValue, TTL).
 
 kv_subscribe(Key) ->
-    raft_consensus:ckv_subscribe(category(), Key).
+    raft_sm:subscribe(category(), Key).
 
 kv_unsubscribe(Key) ->
-    raft_consensus:ckv_unsubscribe(category(), Key).
+    raft_sm:unsubscribe(category(), Key).
 
 category() ->
     user.

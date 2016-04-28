@@ -13,6 +13,7 @@
 %% limitations under the License.
 
 -module(raft_sm).
+
 -export([ckv_delete/3]).
 -export([ckv_get/3]).
 -export([ckv_set/4]).
@@ -21,6 +22,10 @@
 -export([ckv_test_and_set/6]).
 -export([expired/1]).
 -export([new/0]).
+-export([notify/3]).
+-export([subscribe/2]).
+-export([unsubscribe/2]).
+
 
 -type state_machine() :: any().
 
@@ -105,3 +110,19 @@ ckv_test_and_set(Category, Key, ExistingValue, NewValue, TTL, StateMachine) ->
 
 expired(StateMachine) ->
     (raft_config:sm()):expired(StateMachine).
+
+
+subscribe(Category, Key) ->
+    gproc:reg({p, l, {?MODULE, {Category, Key}}}).
+
+unsubscribe(Category, Key) ->
+    gproc:unreg({p, l, {?MODULE, {Category, Key}}}).
+
+notify(Category, Key, Data) when map_size(Data) == 1 ->
+    [Event] = maps:keys(Data),
+    gproc:send({p, l, {?MODULE, {Category, Key}}},
+               #{module => ?MODULE,
+                 id => erlang:unique_integer(),
+                 event => Event,
+                 data => Data}).
+    

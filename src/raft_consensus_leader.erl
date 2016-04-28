@@ -175,7 +175,11 @@ vote(#{term := T, elector := Elector, granted := true},
        commit_index := CI,
        match_indexes := _,
        next_indexes := NI} = Data) ->
-    {next_state, leader, Data#{next_indexes := NI#{Elector => CI + 1}}}.
+    {next_state, leader, Data#{next_indexes := NI#{Elector => CI + 1}}};
+
+vote(#{term := T, elector := Elector, granted := false},
+     #{term := T, against := Against} = Data) ->
+    {next_state, leader, Data#{against := [Elector | Against]}}.
 
 
 %% If RPC request or response contains term T > currentTerm: set
