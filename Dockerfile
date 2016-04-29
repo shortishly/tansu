@@ -4,7 +4,7 @@ ARG REL_NAME
 ARG REL_VSN=1
 ARG ERTS_VSN
 
-ENV BINDIR /erts-7.3/bin
+ENV BINDIR /erts-7.3.1/bin
 ENV BOOT /releases/1/raft_release
 ENV CONFIG /releases/1/sys.config
 ENV ARGS_FILE /releases/1/vm.args
