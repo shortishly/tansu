@@ -256,93 +256,23 @@ handle_event(
             {next_state, State, Data};
 
         #{associations := #{}} ->
-            URL = "http://" ++ inet:ntoa(IP) ++ ":" ++ any:to_list(Port) ++ raft_config:endpoint(server),
-            {next_state, State, do_add_server(URL, Data)}
+            {next_state, State, do_add_server(url(IP, Port), Data)}
     end;
 
 handle_event(_, _, Data) ->
     {stop, error, Data}.
 
-
-%% CKV test and set:
-
-handle_sync_event({ckv_test_and_set = F, Category, Key, ExistingValue, NewValue},
-                  From,
-                  leader = StateName, Data) ->
-    do_log(#{f => F, a => [Category, Key, ExistingValue, NewValue], from => From}, Data),
-    {next_state, StateName, Data};
-
-handle_sync_event({ckv_test_and_set, _, _, _, _}, _From, StateName, Data) ->
-    {reply, not_leader, StateName, Data};
-
-
-%% CKV test and set with TTL:
-
-handle_sync_event({ckv_test_and_set = F, Category, Key, ExistingValue, NewValue, TTL},
-                  From,
-                  leader = StateName, Data) ->
-    do_log(#{f => F, a => [Category, Key, ExistingValue, NewValue, TTL], from => From}, Data),
-    {next_state, StateName, Data};
-
-handle_sync_event({ckv_test_and_set, _, _, _, _, _}, _From, StateName, Data) ->
-    {reply, not_leader, StateName, Data};
-
-
-%% CKV test and delete:
-
-handle_sync_event({ckv_test_and_delete = F, Category, Key, ExistingValue},
-                  From,
-                  leader = StateName, Data) ->
-    do_log(#{f => F, a => [Category, Key, ExistingValue], from => From}, Data),
-    {next_state, StateName, Data};
-
-handle_sync_event({ckv_test_and_delete, _, _, _}, _From, StateName, Data) ->
-    {reply, not_leader, StateName, Data};
-
-
-%% CKV get:
-
 handle_sync_event({ckv_get, Category, Key}, _, StateName, #{state_machine := StateMachine} = Data) ->
     {Result, StateMachine} = raft_sm:ckv_get(Category, Key, StateMachine),
     {reply, Result, StateName, Data};
 
-
-%% CKV delete:
-
-handle_sync_event({ckv_delete = F, Category, Key},
-                  From,
-                  leader = StateName, Data) ->
-    do_log(#{f => F, a => [Category, Key], from => From}, Data),
+handle_sync_event(Event, From, StateName = leader, Data) when is_tuple(Event) ->
+    [Command | Parameters] = tuple_to_list(Event),
+    do_log(#{f => Command, a => Parameters, from => From}, Data),
     {next_state, StateName, Data};
 
-handle_sync_event({ckv_delete, _, _},
-                  _From, StateName,
-                  Data) ->
+handle_sync_event(Event, _, StateName, Data) when is_tuple(Event) ->
     {reply, {error, not_leader}, StateName, Data};
-
-
-%% CKV set:
-
-handle_sync_event({ckv_set = F, Category, Key, Value},
-                  From,
-                  leader = StateName, Data) ->
-    do_log(#{f => F, a => [Category, Key, Value], from => From}, Data),
-    {next_state, StateName, Data};
-
-handle_sync_event({ckv_set, _, _, _}, _, Name, Data) ->
-    {reply, {error, not_leader}, Name, Data};
-
-
-%% CKV set with TTL:
-
-handle_sync_event({ckv_set = F, Category, Key, Value, TTL},
-                  From,
-                  leader = StateName, Data) ->
-    do_log(#{f => F, a => [Category, Key, Value, TTL], from => From}, Data),
-    {next_state, StateName, Data};
-
-handle_sync_event({ckv_set, _, _, _, _}, _, Name, Data) ->
-    {reply, {error, not_leader}, Name, Data};
 
 handle_sync_event(last_applied, _From, StateName, #{last_applied := LA} = Data) ->
     {reply, LA, StateName, Data};
@@ -765,3 +695,10 @@ connections(Connections) ->
       #{},
       Connections).
 
+
+url(IP, Port) ->
+    "http://" ++
+        inet:ntoa(IP) ++
+        ":" ++
+        any:to_list(Port) ++
+        raft_config:endpoint(server).

@@ -14,7 +14,6 @@
 
 -module(raft).
 
--export([log/1]).
 -export([start/0]).
 -export([trace/1]).
 -export([vsn/0]).
@@ -22,12 +21,8 @@
 start() ->
     application:ensure_all_started(?MODULE).
 
-log(Command) ->
-    raft_consensus:log(Command).
-
 ensure_loaded() ->
     lists:foreach(fun code:ensure_loaded/1, modules()).
-
 
 modules() ->
     modules(?MODULE) ++ modules(mnesia).
