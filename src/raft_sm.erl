@@ -18,6 +18,7 @@
 -export([ckv_get/3]).
 -export([ckv_set/4]).
 -export([ckv_set/5]).
+-export([ckv_test_and_delete/4]).
 -export([ckv_test_and_set/5]).
 -export([ckv_test_and_set/6]).
 -export([expired/1]).
@@ -78,6 +79,14 @@
                                                                 {error, Reason :: atom()},
                                                                 StateMachine :: state_machine()}.
 
+-callback ckv_test_and_delete(Category :: atom(),
+                              Key :: binary(),
+                              ExistingValue :: any(),
+                              StateMachine :: state_machine()) -> {ok |
+                                                                   {error, Reason :: string()} |
+                                                                   {error, Reason :: atom()},
+                                                                   StateMachine :: state_machine()}.
+
 -callback ckv_test_and_set(Category :: atom(),
                            Key :: binary(),
                            ExistingValue :: any(),
@@ -105,6 +114,10 @@ ckv_set(Category, Key, Value, TTL, StateMachine) ->
 
 ckv_test_and_set(Category, Key, ExistingValue, NewValue, StateMachine) ->
     (raft_config:sm()):ckv_test_and_set(Category, Key, ExistingValue, NewValue, StateMachine).
+
+ckv_test_and_delete(Category, Key, ExistingValue, StateMachine) ->
+    (raft_config:sm()):ckv_test_and_delete(Category, Key, ExistingValue, StateMachine).
+    
 
 ckv_test_and_set(Category, Key, ExistingValue, NewValue, TTL, StateMachine) ->
     (raft_config:sm()):ckv_test_and_set(Category, Key, ExistingValue, NewValue, TTL, StateMachine).

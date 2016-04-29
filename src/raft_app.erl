@@ -68,6 +68,7 @@ endpoints(server) ->
     [endpoint(server, raft_api_server_resource)];
 endpoints(client) ->
     [endpoint(client, "/keys/[...]", raft_api_client_keys_resource),
+     endpoint(client, "/locks/[...]", raft_api_client_locks_resource),
      endpoint(client, "/info", raft_api_client_info_resource),
      endpoint(client, "/version", raft_api_client_version_resource)].
 

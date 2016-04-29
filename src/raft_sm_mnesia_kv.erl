@@ -13,10 +13,12 @@
 %% limitations under the License.
 
 -module(raft_sm_mnesia_kv).
+
 -export([ckv_delete/3]).
 -export([ckv_get/3]).
 -export([ckv_set/4]).
 -export([ckv_set/5]).
+-export([ckv_test_and_delete/4]).
 -export([ckv_test_and_set/5]).
 -export([ckv_test_and_set/6]).
 -export([expired/1]).
@@ -79,6 +81,9 @@ ckv_set(Category, Key, Value, TTL, ?MODULE = StateMachine) ->
 ckv_test_and_set(Category, Key, ExistingValue, NewValue, ?MODULE = StateMachine) ->
     {do_test_and_set(Category, Key, ExistingValue, NewValue), StateMachine}.
 
+ckv_test_and_delete(Category, Key, ExistingValue, ?MODULE = StateMachine) ->
+    {do_test_and_delete(Category, Key, ExistingValue), StateMachine}.
+
 ckv_test_and_set(Category, Key, ExistingValue, NewValue, TTL, ?MODULE = StateMachine) ->
     {do_test_and_set(Category, Key, ExistingValue, NewValue, TTL), StateMachine}.
 
@@ -112,9 +117,16 @@ recursive_remove(ParentCategory, ParentKey) ->
                    [Key || #?MODULE{key = Key, parent = Parent} <- mnesia:table(?MODULE),
                            Parent == {ParentCategory, ParentKey}])),
     cursor_remove(Children, qlc:next_answers(Children)),
-    mnesia:delete({?MODULE, {ParentCategory, ParentKey}}),
-    raft_sm:notify(ParentCategory, ParentKey, #{event => deleted}),
-    ok.
+    cancel_expiry(ParentCategory, ParentKey),
+    case mnesia:read(?MODULE, {ParentCategory, ParentKey}) of
+        [#?MODULE{value = Value}] ->
+            mnesia:delete({?MODULE, {ParentCategory, ParentKey}}),
+            raft_sm:notify(ParentCategory, ParentKey, #{deleted => Value}),
+            ok;
+        
+        [] ->
+            ok
+    end.
 
 
 cursor_remove(Cursor, []) ->
@@ -269,6 +281,23 @@ do_test_and_set(Category, Key, ExistingValue, NewValue, TTL) ->
                       error
               end
       end).
+
+
+do_test_and_delete(Category, Key, ExistingValue) ->
+    activity(
+      fun
+          () ->
+              case mnesia:read(?MODULE, {Category, Key}) of
+                  [#?MODULE{value = ExistingValue}] ->
+                          recursive_remove(Category, Key);
+
+                  [#?MODULE{}] ->
+                      error;
+                  [] ->
+                      error
+              end
+      end).
+    
 
 do_expired() ->
     activity(
