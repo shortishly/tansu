@@ -15,17 +15,19 @@
 -module(raft_consensus).
 -behaviour(gen_fsm).
 
-%% API.
 -export([add_connection/6]).
 -export([add_server/1]).
 -export([append_entries/6]).
 -export([append_entries_response/5]).
+-export([candidate/2]).
 -export([ckv_delete/2]).
 -export([ckv_get/2]).
 -export([ckv_set/3]).
 -export([ckv_set/4]).
+-export([ckv_test_and_delete/3]).
 -export([ckv_test_and_set/4]).
 -export([ckv_test_and_set/5]).
+-export([code_change/4]).
 -export([commit_index/0]).
 -export([demarshall/2]).
 -export([do_add_server/2]).
@@ -38,10 +40,16 @@
 -export([do_send/3]).
 -export([do_voted_for/1]).
 -export([expired/0]).
+-export([follower/2]).
+-export([handle_event/3]).
+-export([handle_info/3]).
+-export([handle_sync_event/4]).
 -export([id/0]).
 -export([info/0]).
+-export([init/1]).
 -export([last_applied/0]).
 -export([leader/0]).
+-export([leader/2]).
 -export([log/1]).
 -export([quorum/1]).
 -export([remove_server/1]).
@@ -49,20 +57,8 @@
 -export([start/0]).
 -export([start_link/0]).
 -export([stop/0]).
--export([vote/3]).
-
-%% gen_fsm.
--export([code_change/4]).
--export([handle_event/3]).
--export([handle_info/3]).
--export([handle_sync_event/4]).
--export([init/1]).
 -export([terminate/3]).
-
-%% asynchronous
--export([candidate/2]).
--export([follower/2]).
--export([leader/2]).
+-export([vote/3]).
 
 
 start() ->
@@ -155,6 +151,9 @@ ckv_delete(Category, Key) ->
 
 ckv_test_and_set(Category, Key, ExistingValue, NewValue) ->
     sync_send_all_state_event({ckv_test_and_set, Category, Key, ExistingValue, NewValue}).
+
+ckv_test_and_delete(Category, Key, ExistingValue) ->
+    sync_send_all_state_event({ckv_test_and_delete, Category, Key, ExistingValue}).
 
 ckv_test_and_set(Category, Key, ExistingValue, NewValue, TTL) ->
     sync_send_all_state_event({ckv_test_and_set, Category, Key, ExistingValue, NewValue, TTL}).
@@ -265,6 +264,8 @@ handle_event(_, _, Data) ->
     {stop, error, Data}.
 
 
+%% CKV test and set:
+
 handle_sync_event({ckv_test_and_set = F, Category, Key, ExistingValue, NewValue},
                   From,
                   leader = StateName, Data) ->
@@ -273,6 +274,9 @@ handle_sync_event({ckv_test_and_set = F, Category, Key, ExistingValue, NewValue}
 
 handle_sync_event({ckv_test_and_set, _, _, _, _}, _From, StateName, Data) ->
     {reply, not_leader, StateName, Data};
+
+
+%% CKV test and set with TTL:
 
 handle_sync_event({ckv_test_and_set = F, Category, Key, ExistingValue, NewValue, TTL},
                   From,
@@ -283,9 +287,27 @@ handle_sync_event({ckv_test_and_set = F, Category, Key, ExistingValue, NewValue,
 handle_sync_event({ckv_test_and_set, _, _, _, _, _}, _From, StateName, Data) ->
     {reply, not_leader, StateName, Data};
 
+
+%% CKV test and delete:
+
+handle_sync_event({ckv_test_and_delete = F, Category, Key, ExistingValue},
+                  From,
+                  leader = StateName, Data) ->
+    do_log(#{f => F, a => [Category, Key, ExistingValue], from => From}, Data),
+    {next_state, StateName, Data};
+
+handle_sync_event({ckv_test_and_delete, _, _, _}, _From, StateName, Data) ->
+    {reply, not_leader, StateName, Data};
+
+
+%% CKV get:
+
 handle_sync_event({ckv_get, Category, Key}, _, StateName, #{state_machine := StateMachine} = Data) ->
     {Result, StateMachine} = raft_sm:ckv_get(Category, Key, StateMachine),
     {reply, Result, StateName, Data};
+
+
+%% CKV delete:
 
 handle_sync_event({ckv_delete = F, Category, Key},
                   From,
@@ -299,6 +321,8 @@ handle_sync_event({ckv_delete, _, _},
     {reply, {error, not_leader}, StateName, Data};
 
 
+%% CKV set:
+
 handle_sync_event({ckv_set = F, Category, Key, Value},
                   From,
                   leader = StateName, Data) ->
@@ -307,6 +331,9 @@ handle_sync_event({ckv_set = F, Category, Key, Value},
 
 handle_sync_event({ckv_set, _, _, _}, _, Name, Data) ->
     {reply, {error, not_leader}, Name, Data};
+
+
+%% CKV set with TTL:
 
 handle_sync_event({ckv_set = F, Category, Key, Value, TTL},
                   From,
