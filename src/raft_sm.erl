@@ -16,10 +16,8 @@
 
 -export([ckv_delete/3]).
 -export([ckv_get/3]).
--export([ckv_set/4]).
 -export([ckv_set/5]).
 -export([ckv_test_and_delete/4]).
--export([ckv_test_and_set/5]).
 -export([ckv_test_and_set/6]).
 -export([expired/1]).
 -export([goodbye/0]).
@@ -56,28 +54,12 @@
 -callback ckv_set(Category :: atom(),
                   Key :: binary(),
                   Value :: any(),
+                  Options :: map(),
                   StateMachine :: state_machine()) -> {ok |
                                                        {error, Reason :: string()} |
                                                        {error, Reason :: atom()},
                                                        StateMachine :: state_machine()}.
 
--callback ckv_set(Category :: atom(),
-                  Key :: binary(),
-                  Value :: any(),
-                  TTL :: pos_integer(),
-                  StateMachine :: state_machine()) -> {ok |
-                                                       {error, Reason :: string()} |
-                                                       {error, Reason :: atom()},
-                                                       StateMachine :: state_machine()}.
-
--callback ckv_test_and_set(Category :: atom(),
-                           Key :: binary(),
-                           ExistingValue :: any(),
-                           NewValue :: any(),
-                           StateMachine :: state_machine()) -> {ok |
-                                                                {error, Reason :: string()} |
-                                                                {error, Reason :: atom()},
-                                                                StateMachine :: state_machine()}.
 
 -callback ckv_test_and_delete(Category :: atom(),
                               Key :: binary(),
@@ -86,12 +68,11 @@
                                                                    {error, Reason :: string()} |
                                                                    {error, Reason :: atom()},
                                                                    StateMachine :: state_machine()}.
-
 -callback ckv_test_and_set(Category :: atom(),
                            Key :: binary(),
                            ExistingValue :: any(),
                            NewValue :: any(),
-                           TTL :: pos_integer(),
+                           Options :: map(),
                            StateMachine :: state_machine()) -> {ok |
                                                                 {error, Reason :: string()} |
                                                                 {error, Reason :: atom()},
@@ -106,21 +87,14 @@ ckv_get(Category, Key, StateMachine) ->
 ckv_delete(Category, Key, StateMachine) ->
     (raft_config:sm()):ckv_delete(Category, Key, StateMachine).
 
-ckv_set(Category, Key, Value, StateMachine) ->
-    (raft_config:sm()):ckv_set(Category, Key, Value, StateMachine).
-
-ckv_set(Category, Key, Value, TTL, StateMachine) ->
-    (raft_config:sm()):ckv_set(Category, Key, Value, TTL, StateMachine).
-
-ckv_test_and_set(Category, Key, ExistingValue, NewValue, StateMachine) ->
-    (raft_config:sm()):ckv_test_and_set(Category, Key, ExistingValue, NewValue, StateMachine).
+ckv_set(Category, Key, Value, Options, StateMachine) ->
+    (raft_config:sm()):ckv_set(Category, Key, Value, Options, StateMachine).
 
 ckv_test_and_delete(Category, Key, ExistingValue, StateMachine) ->
     (raft_config:sm()):ckv_test_and_delete(Category, Key, ExistingValue, StateMachine).
-    
 
-ckv_test_and_set(Category, Key, ExistingValue, NewValue, TTL, StateMachine) ->
-    (raft_config:sm()):ckv_test_and_set(Category, Key, ExistingValue, NewValue, TTL, StateMachine).
+ckv_test_and_set(Category, Key, ExistingValue, NewValue, Options, StateMachine) ->
+    (raft_config:sm()):ckv_test_and_set(Category, Key, ExistingValue, NewValue, Options, StateMachine).
 
 expired(StateMachine) ->
     (raft_config:sm()):expired(StateMachine).
@@ -138,26 +112,21 @@ notify(Category, Key, Data) when map_size(Data) == 1 ->
                #{module => ?MODULE,
                  id => erlang:unique_integer(),
                  event => Event,
-                 data => Data#{category => Category, key => path(Key)}});
+                 data => Data#{category => Category, key => Key}});
 
 notify(Category, Key, #{id := Id, event := Event} = Data) ->
     gproc:send(key(Category, Key),
                #{module => ?MODULE,
                  id => Id,
                  event => Event,
-                 data => maps:without([id, event], Data#{category => Category, key => path(Key)})});
+                 data => maps:without([id, event], Data#{category => Category, key => Key})});
 
 notify(Category, Key, #{event := Event} = Data) ->
     gproc:send(key(Category, Key),
                #{module => ?MODULE,
                  id => erlang:unique_integer(),
                  event => Event,
-                 data => maps:without([event], Data#{category => Category, key => path(Key)})}).
-
-path([]) ->
-    <<>>;
-path([H | T]) ->
-    <<"/", H/bytes, (path(T))/bytes>>.
+                 data => maps:without([event], Data#{category => Category, key => Key})}).
 
 key(Category, Key) ->
     {p, l, {?MODULE, {Category, Key}}}.

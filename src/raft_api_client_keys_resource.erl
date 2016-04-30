@@ -28,8 +28,12 @@
 -export([to_json/2]).
 
 init(Req, _) ->
-    case {cowboy_req:method(Req), raft_consensus:info(), maps:from_list(cowboy_req:parse_qs(Req))} of
-        {<<"GET">>, Info, #{<<"stream">> := <<"true">>}} ->
+    case {cowboy_req:method(Req),
+          raft_consensus:info(),
+          maps:from_list(cowboy_req:parse_qs(Req)),
+          cowboy_req:header(<<"ttl">>, Req)} of
+
+        {<<"GET">>, Info, #{<<"stream">> := <<"true">>}, _} ->
             %% An event stream can be established with any member of
             %% the cluster.
 	    Headers = [{<<"content-type">>, <<"text/event-stream">>},
@@ -39,16 +43,17 @@ init(Req, _) ->
              cowboy_req:chunked_reply(200, Headers, Req),
              #{info => Info}};
 
-        {<<"GET">>, #{follower := #{leader := _}} = Info, _} ->
+        {<<"GET">>, #{follower := #{leader := _}} = Info, _, _} ->
             %% followers with an established leader can handle simple
             %% KV GET requests.
             {cowboy_rest,
              Req,
              #{info => Info,
                path => cowboy_req:path(Req),
-               key => cowboy_req:path_info(Req)}};
+               key => key(Req),
+               parent => parent(Req)}};
 
-        {_, #{follower := #{connections := Connections, leader := Leader}}, _} ->
+        {_, #{follower := #{connections := Connections, leader := Leader}}, _, _} ->
             %% Requests other than GETs should be proxied to the
             %% leader.
             case Connections of
@@ -60,15 +65,26 @@ init(Req, _) ->
                     service_unavailable(Req, #{})
             end;
 
-        {_, #{leader := _} = Info, _} ->
+        {_, #{leader := _} = Info, _, undefined} ->
             %% The leader can deal directly with any request.
             {cowboy_rest,
              Req,
              #{info => Info,
                path => cowboy_req:path(Req),
-               key => cowboy_req:path_info(Req)}};
+               key => key(Req),
+               parent => parent(Req)}};
 
-        {_, #{}, _} ->
+        {_, #{leader := _} = Info, _, TTL} ->
+            %% The leader can deal directly with any request.
+            {cowboy_rest,
+             Req,
+             #{info => Info,
+               path => cowboy_req:path(Req),
+               ttl => binary_to_integer(TTL),
+               key => key(Req),
+               parent => parent(Req)}};
+
+        {_, #{}, _, _} ->
             %% Neither a leader nor a follower with an established
             %% leader then the service is unavailable.
             service_unavailable(Req, #{})
@@ -92,36 +108,34 @@ content_types_provided(Req, State) ->
 to_json(Req, #{value := Value} = State) ->
     {jsx:encode(#{value => Value}), Req, State}.
 
+key(Req) ->
+    slash_separated(cowboy_req:path_info(Req)).
+
+parent(Req) ->
+    slash_separated(lists:droplast(cowboy_req:path_info(Req))).
+
+slash_separated([]) ->
+    <<"/">>;
+slash_separated(PathInfo) ->
+    lists:foldl(
+      fun
+          (Path, <<>>) ->
+              <<"/", Path/bytes>>;
+          (Path, A) ->
+              <<A/bytes, "/", Path/bytes>>
+      end,
+      <<>>,
+      PathInfo).
 
 from_json(Req, State) ->
     from_json(cowboy_req:body(Req), <<>>, State).
 
 from_json({ok, Final, Req}, Partial, #{key := Key} = State) ->
-    case cowboy_req:header(<<"ttl">>, Req) of
-        undefined ->
-            kv_set(
-              Req,
-              Key,
-              jsx:decode(<<Partial/binary, Final/binary>>),
-              State);
-
-        TTL ->
-            try
-                kv_set(
-                  Req,
-                  Key,
-                  jsx:decode(<<Partial/binary, Final/binary>>),
-                  binary_to_integer(TTL),
-                  State)
-            catch
-                error:badarg ->
-                    kv_set(
-                      Req,
-                      Key,
-                      jsx:decode(<<Partial/binary, Final/binary>>),
-                      State)
-            end
-    end;
+    kv_set(
+      Req,
+      Key,
+      jsx:decode(<<Partial/binary, Final/binary>>),
+      State);
 
 from_json({more, Part, Req}, Partial, State) ->
     from_json(cowboy_req:body(Req), <<Partial/binary, Part/binary>>, State).
@@ -136,42 +150,13 @@ from_form_urlencoded(Req0, State) ->
     end.
 
 from_form_url_encoded(Req, #{<<"value">> := Value}, #{key := Key} = State) ->
-    case cowboy_req:header(<<"ttl">>, Req) of
-        undefined ->
-            kv_set(Req, Key, Value, State);
-
-        TTL ->
-            try
-                kv_set(
-                  Req,
-                  Key,
-                  Value,
-                  binary_to_integer(TTL),
-                  State)
-            catch
-                error:badarg ->
-                    kv_set(
-                      Req,
-                      Key,
-                      Value,
-                      State)
-            end
-    end;
+    kv_set(Req, Key, Value, State);
 
 from_form_url_encoded(Req, _, State) ->
     bad_request(Req, State).
 
-kv_set(Req, Key, Value, TTL, State) ->
-    case raft_api:kv_set(Key, Value, TTL) of
-        ok ->
-            {true, Req, State};
-        
-        not_leader ->
-            service_unavailable(Req, State)
-    end.
-
 kv_set(Req, Key, Value, State) ->
-    case raft_api:kv_set(Key, Value) of
+    case raft_api:kv_set(Key, Value, maps:with([parent, ttl], State)) of
         ok ->
             {true, Req, State};
         
