@@ -21,33 +21,9 @@
 -record(?MODULE, {composite, category, key}).
 
 new() ->
-    Attributes = [{attributes, record_info(fields, ?MODULE)},
-                  {type, ordered_set}],
-
-    Definition = case raft_config:db_schema() of
-                     ram ->
-                         Attributes;
-
-                     _ ->
-                         [{disc_copies, [node()]} | Attributes]
-                 end,
-    case mnesia:create_table(?MODULE, Definition) of
-        {atomic, ok} ->
-            {ok, ?MODULE};
-
-        {aborted, {already_exists, _}} ->
-            case mnesia:wait_for_tables([?MODULE], raft_config:timeout(mnesia_wait_for_tables)) of
-                {timeout, Tables} ->
-                    {error, {timeout, Tables}};
-                {error, _} = Error ->
-                    Error;
-                ok ->
-                    {ok, ?MODULE}
-            end;
-
-        {aborted, Reason} ->
-            {error, Reason}
-    end.
+    raft_mnesia:create_table(?MODULE, [{attributes,
+                                        record_info(fields, ?MODULE)},
+                                       {type, ordered_set}]).
 
 cancel(Category, Key, Expiry) ->
     mnesia:delete_object(#?MODULE{composite = {Expiry, Category, Key},

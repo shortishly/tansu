@@ -32,39 +32,20 @@
 
 
 new() ->
-    Attributes = [{attributes, record_info(fields, ?MODULE)},
-                  {index, [parent]},
-                  {type, ordered_set}],
-
-    Definition = case raft_config:db_schema() of
-                     ram ->
-                         Attributes;
-
-                     _ ->
-                         [{disc_copies, [node()]} | Attributes]
-                 end,
-    case mnesia:create_table(?MODULE, Definition) of
-        {atomic, ok} ->
-            {ok, _} = raft_sm_mnesia_expiry:new(),
-            {ok, ?MODULE};
-
-        {aborted, {already_exists, _}} ->
-            case mnesia:wait_for_tables([?MODULE], raft_config:timeout(mnesia_wait_for_tables)) of
-                {timeout, Tables} ->
-                    {error, {timeout, Tables}};
-                {error, _} = Error ->
-                    Error;
+    case raft_mnesia:create_table(?MODULE, [{attributes,
+                                             record_info(fields, ?MODULE)},
+                                            {index, [parent]},
+                                            {type, ordered_set}]) of
+        ok ->
+            case raft_sm_mnesia_expiry:new() of
                 ok ->
-                    {ok, _} = raft_sm_mnesia_expiry:new(),
-                    {ok, ?MODULE}
+                    {ok, ?MODULE};
+                Other ->
+                    Other
             end;
-
-        {aborted, Reason} ->
-            {error, Reason}
+        Other ->
+            Other
     end.
-
-
-
 
 ckv_get(Category, Key, ?MODULE = StateMachine) ->
     {do_get(Category, Key), StateMachine}.
