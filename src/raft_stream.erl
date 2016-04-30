@@ -12,13 +12,28 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_cluster).
 
--export([add/1]).
--export([remove/1]).
+-module(raft_stream).
 
-add(URI) ->
-    raft_consensus:add_server(URI).
+-export([chunk/3]).
+-export([chunk/4]).
 
-remove(URI) ->
-    raft_consensus:remove_server(URI).
+
+chunk(Id, Event, Req) ->
+    cowboy_req:chunk(
+      ["id: ",
+       any:to_list(Id),
+       "\nevent: ",
+       any:to_list(Event),
+       "\n\n"],
+      Req).
+
+chunk(Id, Event, Data, Req) ->
+    cowboy_req:chunk(
+      ["id: ",
+       any:to_list(Id),
+       "\nevent: ",
+       any:to_list(Event),
+       "\ndata: ",
+       jsx:encode(Data), "\n\n"],
+      Req).

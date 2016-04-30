@@ -68,7 +68,10 @@ timeout(kv_expiry) ->
 timeout(mnesia_wait_for_tables) ->
     envy(to_integer_or_atom, timeout_mnesia_wait_for_tables, infinity);
 timeout(sync_send_event) ->
-    envy(to_integer_or_atom, timeout_sync_send_event, infinity).
+    envy(to_integer_or_atom, timeout_sync_send_event, infinity);
+timeout(stream_ping) ->
+    envy(to_integer, timeout_stream_ping, 5000).
+
 
 
 minimum(quorum) ->
