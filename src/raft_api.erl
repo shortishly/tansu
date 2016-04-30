@@ -36,19 +36,19 @@ kv_get(Key) ->
     raft_consensus:ckv_get(category(), Key).
 
 kv_set(Key, Value) ->
-    raft_consensus:ckv_set(category(), Key, Value).
+    kv_set(Key, Value, #{}).
 
-kv_set(Key, Value, TTL) ->
-    raft_consensus:ckv_set(category(), Key, Value, TTL).
-
-kv_test_and_set(Key, ExistingValue, NewValue) ->
-    raft_consensus:ckv_test_and_set(category(), Key, ExistingValue, NewValue).
+kv_set(Key, Value, Options) ->
+    raft_consensus:ckv_set(category(), Key, Value, Options).
 
 kv_test_and_delete(Key, ExistingValue) ->
     raft_consensus:ckv_test_and_delete(category(), Key, ExistingValue).
 
-kv_test_and_set(Key, ExistingValue, NewValue, TTL) ->
-    raft_consensus:ckv_test_and_set(category(), Key, ExistingValue, NewValue, TTL).
+kv_test_and_set(Key, ExistingValue, NewValue) ->
+    kv_test_and_set(Key, ExistingValue, NewValue, #{}).
+
+kv_test_and_set(Key, ExistingValue, NewValue, Options) ->
+    raft_consensus:ckv_test_and_set(category(), Key, ExistingValue, NewValue, Options).
 
 kv_subscribe(Key) ->
     raft_sm:subscribe(category(), Key).
