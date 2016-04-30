@@ -22,28 +22,25 @@
 init(Req, _) ->
     case raft_consensus:info() of
         #{leader := _} ->
-	    Headers = [{<<"content-type">>, <<"text/event-stream">>},
-		       {<<"cache-control">>, <<"no-cache">>}],
+            self() ! try_lock,
             raft_api:kv_subscribe(cowboy_req:path_info(Req)),
-
-            Lock = cowboy_req:path_info(Req),
+            do_ping(),
             Key = raft_uuid:new(),
-            
-            %% try and lock with our key:
-            case raft_api:kv_test_and_set(Lock, undefined, Key) of
-                not_leader ->
-                    %% whoa, we were the leader.
-                    service_unavailable(Req, #{});
-
-                _ ->
-                    {cowboy_loop,
-                     cowboy_req:chunked_reply(200, Headers, Req),
-                     #{lock => Lock, key => Key, n => 1}}
-            end;
+            Headers = [{<<"content-type">>, <<"text/event-stream">>},
+                       {<<"cache-control">>, <<"no-cache">>},
+                       {<<"key">>, Key}],
+            {cowboy_loop,
+             cowboy_req:chunked_reply(200, Headers, Req),
+             #{lock => cowboy_req:path_info(Req),
+               key => Key,
+               n => 1}};
 
         #{follower := #{connections := Connections, leader := Leader}} ->
             case Connections of
                 #{Leader := #{host := Host, port := Port}} ->
+                    %% We are connected to a follower with an
+                    %% established leader, proxy this request through
+                    %% to the leader.
                     raft_api_client_proxy_resource:init(
                       Req, #{host => binary_to_list(Host), port => Port});
 
@@ -57,24 +54,28 @@ init(Req, _) ->
             service_unavailable(Req, #{})
     end.
 
+info(try_lock, Req, State) ->
+    do_try_lock(Req, State);
+
 info(#{event := set, data := #{value := Key}, module := raft_sm}, Req, #{key := Key, n := N} = State) ->
-    {chunk(N, granted, Req), Req, State#{n := N+1}};
+    %% The lock has been granted, by setting the value to our key.
+    {ok, Req, State#{n := N+1}};
 
 info(#{event := set, data := #{value := Key}, module := raft_sm}, Req, #{n := N} = State) ->
-    {chunk(N, not_granted, #{locked_by => Key}, Req), Req, State#{n := N+1}};
+    %% The lock has been granted to someone else by setting its value
+    %% to their key.
+    raft_stream:chunk(N, not_granted, #{locked_by => Key}, Req),
+    {ok, Req, State#{n := N+1}};
 
-info(#{event := deleted, module := raft_sm}, Req, #{lock := Lock, key := Key, n := N} = State) ->
-    case raft_api:kv_test_and_set(Lock, undefined, Key) of
-        not_leader ->
-            %% whoa, we were the leader.
-            service_unavailable(Req, #{});
+info(#{event := deleted, module := raft_sm}, Req, State) ->
+    %% The lock has been deleted, try and obtain the lock if there is
+    %% also a leader.
+    do_try_lock(Req, State);
 
-        _ ->
-            {chunk(N, not_granted, #{action => retrying}, Req), Req, State#{n := N+1}}
-    end;
-
-info(#{event := Event, data := Data, module := raft_sm}, Req, #{n := N} = State) ->
-    {chunk(N, Event, Data, Req), Req, State#{n := N+1}};
+info(ping, Req, #{n := N} = State) ->
+    raft_stream:chunk(N, ping, Req),
+    do_ping(),
+    {ok, Req, State#{n := N+1}};
 
 info(Event, Req, #{proxy := Proxy} = State) ->
     Proxy:info(Event, Req, State).
@@ -86,29 +87,24 @@ terminate(_Reason, _Req, #{lock := Lock, key := Key}) ->
     raft_api:kv_test_and_delete(Lock, Key),
     ok.
 
+do_ping() ->
+    erlang:send_after(raft_config:timeout(stream_ping), self(), ping).
 
-chunk(Id, Event, Data, Req) ->
-    cowboy_req:chunk(
-      ["id: ",
-       any:to_list(Id),
-       "\nevent: ",
-       any:to_list(Event),
-       "\ndata: ",
-       jsx:encode(Data), "\n\n"],
-      Req).
+do_try_lock(Req, #{lock := Lock, key := Key, n := N} = State) ->
+    case raft_api:kv_test_and_set(Lock, undefined, Key) of
+        not_leader ->
+            %% whoa, we were the leader.
+            raft_stream:chunk(N, not_granted, #{service_unavailable => not_leader}, Req),
+            {stop, Req, State#{n := N+1}};
 
+        ok ->
+            raft_stream:chunk(N, granted, Req),
+            {ok, Req, State#{n := N+1}};
 
-chunk(Id, Event, Req) ->
-    cowboy_req:chunk(
-      ["id: ",
-       any:to_list(Id),
-       "\nevent: ",
-       any:to_list(Event),
-       "\n\n"],
-      Req).
-
-
-
+        error ->
+            raft_stream:chunk(N, not_granted, Req),
+            {ok, Req, State#{n := N+1}}
+    end.
                 
 service_unavailable(Req, State) ->
     stop_with_code(503, Req, State).

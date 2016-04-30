@@ -661,8 +661,19 @@ do_info(State, Data) ->
                      (connections, Connections, A) ->
                          A#{connections => connections(Connections)};
                      
-                     (state_machine, _, A) ->
+                     (state_machine, undefined, A) ->
                          A;
+
+                     (state_machine, StateMachine, A) ->
+                         case raft_sm:ckv_get(system, [<<"cluster">>], StateMachine) of
+                             {{ok, Id}, _} ->
+                                 A#{cluster => Id};
+                             _ ->
+                                 A
+                         end;
+
+                     (id, Id, A) ->
+                         A#{node => Id};
                      
                      (K, V, A) ->
                          A#{K => V}
