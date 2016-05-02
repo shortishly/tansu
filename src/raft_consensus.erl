@@ -653,45 +653,43 @@ quorum(#{associations := Associations}) ->
     max(raft_config:minimum(quorum), ((map_size(Associations) + 1) div 2) + 1).
 
 do_info(State, Data) ->
-    #{State => maps:fold(
-                 fun
-                     (env, Env, A) ->
-                         A#{env => any:to_binary(Env)};
-                     
-                     (connections, Connections, A) ->
-                         A#{connections => connections(Connections)};
-                     
-                     (state_machine, undefined, A) ->
-                         A;
+    maps:fold(
+      fun
+          (env, Env, #{State := Detail} = A) ->
+                     A#{State := Detail#{env => any:to_binary(Env)}};
 
-                     (state_machine, StateMachine, A) ->
-                         case raft_sm:ckv_get(system, [<<"cluster">>], StateMachine) of
-                             {{ok, Id}, _} ->
-                                 A#{cluster => Id};
-                             _ ->
-                                 A
-                         end;
+          (connections, Connections, #{State := Detail} = A) ->
+                     A#{State := Detail#{connections => connections(Connections)}};
 
-                     (id, Id, A) ->
-                         A#{node => Id};
-                     
-                     (K, V, A) ->
-                         A#{K => V}
-                 end,
-                 #{},
-                 maps:with([against,
-                            commit_index,
-                            connections,
-                            id,
-                            for,
-                            last_applied,
-                            leader,
-                            match_indexes,
-                            next_indexes,
-                            state_machine,
-                            term,
-                            voted_for],
-                           Data))}.
+          (state_machine, undefined, A) ->
+                     A;
+
+          (state_machine, StateMachine, A) ->
+                     case raft_sm:ckv_get(system, [<<"cluster">>], StateMachine) of
+                         {{ok, Id}, _} ->
+                             A#{cluster => Id};
+                         _ ->
+                             A
+                     end;
+
+          (K, V, #{State := Detail} = A) ->
+                     A#{State := Detail#{K => V}}
+      end,
+      #{State => #{}},
+      maps:with([against,
+                 commit_index,
+                 connections,
+                 env,
+                 id,
+                 for,
+                 last_applied,
+                 leader,
+                 match_indexes,
+                 next_indexes,
+                 state_machine,
+                 term,
+                 voted_for],
+                Data)).
 
 
 connections(Connections) ->

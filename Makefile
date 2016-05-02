@@ -55,4 +55,7 @@ SHELL_OPTS = \
 SHELL_DEPS = \
 	sync
 
+TEST_DEPS = \
+	triq
+
 include erlang.mk

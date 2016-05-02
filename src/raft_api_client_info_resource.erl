@@ -30,7 +30,7 @@ init(Req, Opts) ->
                              end,
                              #{},
                              application:which_applications()),
-           cluster => raft_consensus:info(),
+           consensus => raft_consensus:info(),
            version => #{major => any:to_integer(Major),
                         minor => any:to_integer(Minor),
                         patch => any:to_integer(Patch)}}),
