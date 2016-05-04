@@ -82,7 +82,8 @@ append_entries(#{entries := [],
                                          for,
                                          against],
                                         raft_consensus:do_call_election_after_timeout(
-                                          Data#{term => raft_ps:term(Id, T), leader => L}))}.
+                                          raft_consensus:do_drop_votes(
+                                            Data#{term => raft_ps:term(Id, T), leader => L})))}.
 
 
 append_entries_response(#{term := Term}, #{term := Current} = Data) when Term < Current ->
@@ -104,6 +105,10 @@ request_vote(#{candidate := C}, #{term := T, id := Id} = Data) ->
        Data)}.
 
 
+%% Ignore votes from earlier terms.
+vote(#{term := T}, #{term := CT} = Data) when T < CT ->
+    {next_state, candidate, Data};
+
 %% If RPC request or response contains term T > currentTerm: set
 %% currentTerm = T, convert to follower (§5.1)
 vote(#{term := T}, #{id := Id, term := CT} = Data) when T > CT ->
@@ -112,7 +117,6 @@ vote(#{term := T}, #{id := Id, term := CT} = Data) when T > CT ->
 
 vote(#{elector := Elector, term := Term, granted := true},
      #{for := For,
-       against := Against,
        connections := Connections,
        associations := Associations,
        term := Term} = Data) when map_size(Connections) == map_size(Associations) ->
@@ -121,7 +125,7 @@ vote(#{elector := Elector, term := Term, granted := true},
     Quorum = raft_consensus:quorum(Data),
 
     case ordsets:add_element(Elector, For) of
-        Proposers when (Members >= Quorum) andalso (length(Proposers) > length(Against)) ->
+        Proposers when (Members >= Quorum) andalso (length(Proposers) > (Members div 2)) ->
             {next_state, leader, appoint_leader(Data#{for := Proposers})};
 
         Proposers ->

@@ -25,7 +25,7 @@ ensure_loaded() ->
     lists:foreach(fun code:ensure_loaded/1, modules()).
 
 modules() ->
-    modules(?MODULE) ++ modules(mnesia).
+    modules(?MODULE). %%  ++ modules(mnesia).
 
 modules(Application) ->
     {ok, Modules} = application:get_key(Application, modules),
@@ -35,6 +35,7 @@ modules(Application) ->
 trace(true) ->
     ensure_loaded(),
     case recon_trace:calls([m(Module) || Module <- modules()],
+                           {500000,1000},
                            [{scope, local},
                             {pid, all}]) of
         Matches when Matches > 0 ->

@@ -216,5 +216,4 @@ service_unavailable(Req, State) ->
     stop_with_code(503, Req, State).
 
 stop_with_code(Code, Req, State) ->
-    {stop, cowboy_req:reply(Code, Req), State}.
-    
+    {ok, cowboy_req:reply(Code, Req), State}.

@@ -135,7 +135,7 @@ append_entries(#{entries := Entries,
     end.
 
 
-append_entries_response(#{term := Term}, #{term := Current} = Data) when Term < Current ->
+append_entries_response(#{term := Term}, #{term := Current} = Data) when Term =< Current ->
     {next_state, follower, Data}.
 
 
@@ -167,6 +167,16 @@ request_vote(#{term := T,
       Data),
     {next_state, follower, raft_consensus:do_call_election_after_timeout(Data)};
 
+
+%% If votedFor is null or candidateId, and candidate’s log is at least
+%% as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
+request_vote(#{term := T, candidate := Candidate},
+             #{id := Id, term := T, voted_for := _} = Data) ->
+    raft_consensus:do_send(
+      raft_rpc:vote(Id, T, false),
+      Candidate,
+      Data),
+    {next_state, follower, Data};
 
 %% If votedFor is null or candidateId, and candidate’s log is at least
 %% as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
@@ -225,17 +235,7 @@ request_vote(#{term := Term,
                                      [voted_for],
                                      raft_consensus:do_call_election_after_timeout(
                                        Data#{term => raft_ps:term(Id, Term)}))}
-    end;
-
-%% If votedFor is null or candidateId, and candidate’s log is at least
-%% as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
-request_vote(#{term := T, candidate := Candidate},
-             #{id := Id, term := T, voted_for := _} = Data) ->
-    raft_consensus:do_send(
-      raft_rpc:vote(Id, T, false),
-      Candidate,
-      Data),
-    {next_state, follower, Data}.
+    end.
 
 
 do_apply_to_state_machine(LastApplied, CommitIndex, State) ->

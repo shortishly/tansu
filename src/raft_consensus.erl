@@ -259,6 +259,10 @@ handle_event(
             {next_state, State, do_add_server(url(IP, Port), Data)}
     end;
 
+handle_event({mdns_advertisement, _}, State, Data) ->
+    %% ignore advertisements from others
+    {next_state, State, Data};
+
 handle_event(_, _, Data) ->
     {stop, error, Data}.
 
@@ -420,7 +424,8 @@ handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{
 handle_info({gun_ws, Peer, {binary, Message}}, Name, Data) ->
     {next_state, Name, do_demarshall(Peer, raft_rpc:decode(Message), Data)};
 
-handle_info({gun_ws, _, {close, _, _}}, Name, Data) ->
+handle_info({gun_ws, Pid, {close, _, _}}, Name, Data) ->
+    gun:close(Pid),
     {next_state, Name, Data}.
 
 
