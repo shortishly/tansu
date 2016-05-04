@@ -44,7 +44,7 @@ end_per_suite(Config) ->
     disconnect_from_docker(
       remove_cluster(
         stop_kvc(
-          log_cluster(Config)))).
+          Config))).
 
 write_test(_Config) ->
     lists:foreach(
@@ -135,19 +135,19 @@ ip_from_cluster(Config) ->
     Cluster = maps:values(config(cluster, Config)),
     lists:nth(random:uniform(length(Cluster)), Cluster).
 
-log_cluster(Config) ->
-    log_cluster(config(docker, Config), config(cluster, Config)),
-    Config.
+%% log_cluster(Config) ->
+%%     log_cluster(config(docker, Config), config(cluster, Config), config(priv_dir, Config)),
+%%     Config.
 
-log_cluster(Docker, Cluster) ->
-    maps:fold(
-      fun(Id, _, A) ->
-              {ok, Logs} = docker_client:logs_container(Docker, Id),
-              ct:log("container: ~s~n~s~n", [binary_to_list(Id), binary_to_list(Logs)]),
-              A
-      end,
-      ignore,
-      Cluster).
+%% log_cluster(Docker, Cluster, PrivDir) ->
+%%     maps:fold(
+%%       fun(Id, _, A) ->
+%%               {ok, _Logs} = docker_client:logs_container(Docker, Id, PrivDir),
+%%               %% ct:log("container: ~s~n~s~n", [binary_to_list(Id), binary_to_list(Logs)]),
+%%               A
+%%       end,
+%%       ignore,
+%%       Cluster).
     
 
 remove_cluster(Config) ->
@@ -186,14 +186,14 @@ stop_kvc(Config) ->
 
 start_container(Docker, Env) ->
     Configuration = #{<<"Image">> => <<"shortishly/raft">>,
-                      <<"Env">> => authorized_keys([<<"RAFT_ENVIRONMENT=", Env/bytes>>,
-                                                    <<"RAFT_DEBUG=false">>])},
+                      <<"Env">> => maybe_add_authorized_keys([<<"RAFT_ENVIRONMENT=", Env/bytes>>,
+                                                              <<"RAFT_DEBUG=true">>])},
     {ok, #{<<"Id">> := Id}} = docker_client:create_container(Docker, Configuration),
     ok = docker_client:start_container(Docker, Id),
     {ok, #{<<"NetworkSettings">> := #{<<"Networks">> := #{<<"bridge">> := #{<<"IPAddress">> := IP}}}}} = docker_client:inspect_container(Docker, Id),
     {Id, any:to_list(IP)}.
 
-authorized_keys(Environment) ->
+maybe_add_authorized_keys(Environment) ->
     case os:getenv("HOME") of
         false ->
             Environment;

@@ -23,7 +23,7 @@
 -export([info/1]).
 -export([init/1]).
 -export([inspect_container/2]).
--export([logs_container/2]).
+-export([logs_container/3]).
 -export([kill_container/2]).
 -export([remove_container/4]).
 -export([start/4]).
@@ -56,8 +56,8 @@ inspect_container(Docker, ContainerId) ->
 remove_container(Docker, ContainerId, Volumes, Force) ->
     gen_server:call(Docker, {remove_container, ContainerId, Volumes, Force}, infinity).
 
-logs_container(Docker, ContainerId) ->
-    gen_server:call(Docker, {logs_container, ContainerId}, infinity).
+logs_container(Docker, ContainerId, PrivDir) ->
+    gen_server:call(Docker, {logs_container, ContainerId, PrivDir}, infinity).
     
 
 stop(Docker) ->
@@ -129,8 +129,10 @@ handle_call({kill_container, ContainerId}, Reply, #{docker := Gun, requests := R
 handle_call({remove_container, ContainerId, Volumes, Force}, Reply, #{docker := Gun, requests := Requests} = State) ->
     {noreply, State#{requests := Requests#{gun:delete(Gun, ["/containers/", ContainerId, "?v=", any:to_list(Volumes), "&force=", any:to_list(Force)]) => #{from => Reply, partial => <<>>}}}};
 
-handle_call({logs_container, ContainerId}, Reply, #{docker := Gun, requests := Requests} = State) ->
-    {noreply, State#{requests := Requests#{gun:get(Gun, ["/containers/", ContainerId, "/logs?stdout=true&stderr=true"]) => #{from => Reply, partial => <<>>}}}};
+handle_call({logs_container, ContainerId, PrivDir}, Reply, #{docker := Gun, requests := Requests} = State) ->
+    Filename = filename:join(PrivDir, any:to_list(ContainerId) ++ ".log"),
+    {ok, Logs} = file:open(Filename, [write]),
+    {noreply, State#{requests := Requests#{gun:get(Gun, ["/containers/", ContainerId, "/logs?stdout=true&stderr=true"]) => #{from => Reply, partial => <<>>, filename => Filename, output => Logs}}}};
 
 handle_call(info, Reply, #{docker := Gun, requests := Requests} = State) ->
     {noreply, State#{requests := Requests#{gun:get(Gun, "/info") => #{from => Reply, partial => <<>>}}}}.
@@ -148,17 +150,30 @@ handle_info({gun_down, Gun, http, _, _, _}, #{docker := Gun} = State) ->
     {noreply, State};
 
 handle_info({gun_data, Gun, Request, fin, Data}, #{docker := Gun, requests := Requests} = State) ->
-    #{Request := #{from := From, partial := Partial, headers := Headers}} = Requests,
-    gen_server:reply(From, {ok, decode(Headers, <<Partial/bytes, Data/bytes>>)}),
-    {noreply, State#{requests := maps:without([Request], Requests)}};
+    case Requests of
+        #{Request := #{from := From, partial := Partial, headers := #{<<"transfer-encoding">> := <<"chunked">>}, filename := Filename, output := Output}} ->
+            write_chunks(Output, <<Partial/bytes, Data/bytes>>),
+            file:close(Output),
+            gen_server:reply(From, {ok, Filename}),
+            {noreply, State#{requests := maps:without([Request], Requests)}};
+
+    #{Request := #{from := From, partial := Partial, headers := Headers}} ->
+            gen_server:reply(From, {ok, decode(Headers, <<Partial/bytes, Data/bytes>>)}),
+            {noreply, State#{requests := maps:without([Request], Requests)}}
+    end;
 
 handle_info({gun_data, Gun, Request, nofin, Data}, #{docker := Gun, requests := Requests} = State) ->
-    #{Request := #{partial := Partial} = Detail} = Requests,
-    {noreply, State#{requests := Requests#{Request := Detail#{partial := <<Partial/bytes, Data/bytes>>}}}};
+    case Requests of
+        #{Request := #{partial := Partial, headers := #{<<"transfer-encoding">> := <<"chunked">>}, output := Output} = Detail} ->
+            {noreply, State#{requests := Requests#{Request := Detail#{partial := write_chunks(Output, <<Partial/bytes, Data/bytes>>)}}}};
+
+        #{Request := #{partial := Partial} = Detail} ->
+            {noreply, State#{requests := Requests#{Request := Detail#{partial := <<Partial/bytes, Data/bytes>>}}}}
+    end;
 
 handle_info({gun_response, Gun, Request, nofin, StatusCode, Headers}, #{docker := Gun, requests := Requests} = State) ->
     #{Request := Detail} = Requests,
-    {noreply, State#{requests := Requests#{Request := Detail#{status => StatusCode, headers => Headers}}}};
+    {noreply, State#{requests := Requests#{Request := Detail#{status => StatusCode, headers => maps:from_list(Headers)}}}};
 
 handle_info({gun_response, Gun, Request, fin, 204, _}, #{docker := Gun, requests := Requests} = State) ->
     #{Request := #{from := From}} = Requests,
@@ -224,9 +239,12 @@ read_file(Path, File) ->
     file:read_file(filename:join(Path, File)).
 
 
+write_chunks(Output, <<1, 0, 0, 0, 0, 0, 0, Length:8, Data:Length/bytes, Remainder/bytes>>) ->
+    file:write(Output, Data),
+    write_chunks(Output, Remainder);
+write_chunks(_Output, Partial) ->
+    Partial.
 
-decode(Headers, Body) when is_list(Headers) ->
-    decode(maps:from_list(Headers), Body);
 
 decode(#{<<"transfer-encoding">> := <<"chunked">>} = Headers, <<1, 0, 0, 0, 0, 0, 0, Length:8, Data:Length/bytes, Remainder/bytes>>) ->
     <<Data/bytes, (decode(Headers, Remainder))/bytes>>;
