@@ -14,6 +14,7 @@
 
 -module(raft).
 
+-export([description/0]).
 -export([start/0]).
 -export([trace/1]).
 -export([vsn/0]).
@@ -49,6 +50,12 @@ trace(false) ->
 m(Module) ->
     {Module, '_', '_'}.
 
+description() ->
+    get_key(description).
+
 vsn() ->
-    {ok, VSN} = application:get_key(?MODULE, vsn),
-    VSN.
+    get_key(vsn).
+
+get_key(Key) ->
+    {ok, Value} = application:get_key(?MODULE, Key),
+    Value.

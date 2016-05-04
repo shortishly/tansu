@@ -13,7 +13,7 @@
 %% limitations under the License.
 
 
--module(raft_api_client_locks_resource).
+-module(raft_api_locks_resource).
 -export([init/2]).
 -export([info/3]).
 -export([terminate/3]).
@@ -41,7 +41,7 @@ init(Req, _) ->
                     %% We are connected to a follower with an
                     %% established leader, proxy this request through
                     %% to the leader.
-                    raft_api_client_proxy_resource:init(
+                    raft_api_proxy_resource:init(
                       Req, #{host => binary_to_list(Host), port => Port});
 
                 #{} ->

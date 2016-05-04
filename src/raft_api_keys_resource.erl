@@ -13,7 +13,7 @@
 %% limitations under the License.
 
 
--module(raft_api_client_keys_resource).
+-module(raft_api_keys_resource).
 
 -export([allowed_methods/2]).
 -export([content_types_accepted/2]).
@@ -58,7 +58,7 @@ init(Req, _) ->
             %% leader.
             case Connections of
                 #{Leader := #{host := Host, port := Port}} ->
-                    raft_api_client_proxy_resource:init(
+                    raft_api_proxy_resource:init(
                       Req, #{host => binary_to_list(Host), port => Port});
 
                 #{} ->
