@@ -15,7 +15,7 @@
 #
 PROJECT = raft
 PROJECT_DESCRIPTION = Raft Consensus
-PROJECT_VERSION = 0.8.0
+PROJECT_VERSION = 0.9.0
 
 DEPS = \
 	cowboy \
@@ -54,5 +54,8 @@ SHELL_OPTS = \
 
 SHELL_DEPS = \
 	sync
+
+TEST_DEPS = \
+	triq
 
 include erlang.mk

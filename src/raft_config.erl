@@ -39,9 +39,9 @@ sm() ->
     envy(to_atom, sm, raft_sm_mnesia_kv).
 
 endpoint(server) ->
-    envy(to_list, endpoint_server, "/api");
-endpoint(client) ->
-    envy(to_list, endpoint_server, "/client").
+    endpoint(api) ++ envy(to_list, endpoint_server, "/server");
+endpoint(api) ->
+    envy(to_list, endpoint_api, "/api").
 
 port(http) ->
     envy(to_integer, http_port, 80).

@@ -14,6 +14,7 @@
 
 -module(raft).
 
+-export([description/0]).
 -export([start/0]).
 -export([trace/1]).
 -export([vsn/0]).
@@ -25,7 +26,7 @@ ensure_loaded() ->
     lists:foreach(fun code:ensure_loaded/1, modules()).
 
 modules() ->
-    modules(?MODULE) ++ modules(mnesia).
+    modules(?MODULE). %%  ++ modules(mnesia).
 
 modules(Application) ->
     {ok, Modules} = application:get_key(Application, modules),
@@ -35,6 +36,7 @@ modules(Application) ->
 trace(true) ->
     ensure_loaded(),
     case recon_trace:calls([m(Module) || Module <- modules()],
+                           {500000,1000},
                            [{scope, local},
                             {pid, all}]) of
         Matches when Matches > 0 ->
@@ -48,6 +50,12 @@ trace(false) ->
 m(Module) ->
     {Module, '_', '_'}.
 
+description() ->
+    get_key(description).
+
 vsn() ->
-    {ok, VSN} = application:get_key(?MODULE, vsn),
-    VSN.
+    get_key(vsn).
+
+get_key(Key) ->
+    {ok, Value} = application:get_key(?MODULE, Key),
+    Value.

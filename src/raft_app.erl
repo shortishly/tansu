@@ -20,7 +20,6 @@
 
 -export([create_schema/0]).
 -export([create_tables/0]).
--export([endpoints/1]).
 -export([start/2]).
 -export([stop/1]).
 
@@ -61,15 +60,15 @@ dispatch(Prefix) ->
 
 
 resources(http) ->
-    [{'_', endpoints(server) ++ endpoints(client)}].
+    [{'_', endpoints()}].
 
 
-endpoints(server) ->
-    [endpoint(server, raft_api_server_resource)];
-endpoints(client) ->
-    [endpoint(client, "/keys/[...]", raft_api_client_keys_resource),
-     endpoint(client, "/locks/[...]", raft_api_client_locks_resource),
-     endpoint(client, "/info", raft_api_client_info_resource)].
+endpoints() ->
+    [endpoint(server, raft_api_server_resource),
+     endpoint(api, "/keys/[...]", raft_api_keys_resource),
+     endpoint(api, "/locks/[...]", raft_api_locks_resource),
+     endpoint(api, "/swagger.json", raft_oapi_resource),
+     endpoint(api, "/info", raft_api_info_resource)].
 
 
 endpoint(Endpoint, Module) ->

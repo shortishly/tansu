@@ -13,7 +13,7 @@
 %% limitations under the License.
 
 
--module(raft_api_client_keys_resource).
+-module(raft_api_keys_resource).
 
 -export([allowed_methods/2]).
 -export([content_types_accepted/2]).
@@ -58,7 +58,7 @@ init(Req, _) ->
             %% leader.
             case Connections of
                 #{Leader := #{host := Host, port := Port}} ->
-                    raft_api_client_proxy_resource:init(
+                    raft_api_proxy_resource:init(
                       Req, #{host => binary_to_list(Host), port => Port});
 
                 #{} ->
@@ -216,5 +216,4 @@ service_unavailable(Req, State) ->
     stop_with_code(503, Req, State).
 
 stop_with_code(Code, Req, State) ->
-    {stop, cowboy_req:reply(Code, Req), State}.
-    
+    {ok, cowboy_req:reply(Code, Req), State}.

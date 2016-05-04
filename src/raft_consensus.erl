@@ -259,6 +259,10 @@ handle_event(
             {next_state, State, do_add_server(url(IP, Port), Data)}
     end;
 
+handle_event({mdns_advertisement, _}, State, Data) ->
+    %% ignore advertisements from others
+    {next_state, State, Data};
+
 handle_event(_, _, Data) ->
     {stop, error, Data}.
 
@@ -420,7 +424,8 @@ handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{
 handle_info({gun_ws, Peer, {binary, Message}}, Name, Data) ->
     {next_state, Name, do_demarshall(Peer, raft_rpc:decode(Message), Data)};
 
-handle_info({gun_ws, _, {close, _, _}}, Name, Data) ->
+handle_info({gun_ws, Pid, {close, _, _}}, Name, Data) ->
+    gun:close(Pid),
     {next_state, Name, Data}.
 
 
@@ -653,45 +658,43 @@ quorum(#{associations := Associations}) ->
     max(raft_config:minimum(quorum), ((map_size(Associations) + 1) div 2) + 1).
 
 do_info(State, Data) ->
-    #{State => maps:fold(
-                 fun
-                     (env, Env, A) ->
-                         A#{env => any:to_binary(Env)};
-                     
-                     (connections, Connections, A) ->
-                         A#{connections => connections(Connections)};
-                     
-                     (state_machine, undefined, A) ->
-                         A;
+    maps:fold(
+      fun
+          (env, Env, #{State := Detail} = A) ->
+                     A#{State := Detail#{env => any:to_binary(Env)}};
 
-                     (state_machine, StateMachine, A) ->
-                         case raft_sm:ckv_get(system, [<<"cluster">>], StateMachine) of
-                             {{ok, Id}, _} ->
-                                 A#{cluster => Id};
-                             _ ->
-                                 A
-                         end;
+          (connections, Connections, #{State := Detail} = A) ->
+                     A#{State := Detail#{connections => connections(Connections)}};
 
-                     (id, Id, A) ->
-                         A#{node => Id};
-                     
-                     (K, V, A) ->
-                         A#{K => V}
-                 end,
-                 #{},
-                 maps:with([against,
-                            commit_index,
-                            connections,
-                            id,
-                            for,
-                            last_applied,
-                            leader,
-                            match_indexes,
-                            next_indexes,
-                            state_machine,
-                            term,
-                            voted_for],
-                           Data))}.
+          (state_machine, undefined, A) ->
+                     A;
+
+          (state_machine, StateMachine, A) ->
+                     case raft_sm:ckv_get(system, [<<"cluster">>], StateMachine) of
+                         {{ok, Id}, _} ->
+                             A#{cluster => Id};
+                         _ ->
+                             A
+                     end;
+
+          (K, V, #{State := Detail} = A) ->
+                     A#{State := Detail#{K => V}}
+      end,
+      #{State => #{}},
+      maps:with([against,
+                 commit_index,
+                 connections,
+                 env,
+                 id,
+                 for,
+                 last_applied,
+                 leader,
+                 match_indexes,
+                 next_indexes,
+                 state_machine,
+                 term,
+                 voted_for],
+                Data)).
 
 
 connections(Connections) ->
