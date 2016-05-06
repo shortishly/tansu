@@ -15,16 +15,23 @@
 -module(raft_config).
 
 -export([acceptors/1]).
+-export([batch_size/1]).
 -export([can/1]).
 -export([db_schema/0]).
 -export([directory/1]).
 -export([enabled/1]).
 -export([endpoint/1]).
 -export([environment/0]).
+-export([maximum/1]).
 -export([minimum/1]).
 -export([port/1]).
 -export([sm/0]).
 -export([timeout/1]).
+
+
+batch_size(append_entries) ->
+    envy(to_integer, batch_size_append_entries, 32).
+    
 
 can(advertise) ->
     envy(to_boolean, can_advertise, true);
@@ -82,6 +89,9 @@ timeout(stream_ping) ->
 
 minimum(quorum) ->
     envy(to_integer, minimum_quorum, 3).
+
+maximum(snapshot) ->
+    envy(to_integer, maximum_snapshot, 3).
 
 envy(To, Name, Default) ->
     envy:To(raft, Name, default(Default)).

@@ -149,7 +149,9 @@ end_of_term(#{term := T0,
                                            A#{Follower => LastIndexInSnapshot+1};
                                        
                                        _ ->
-                                           Entries = raft_log:read(Index, LA),
+
+                                           Batch = min(raft_config:batch_size(append_entries), LA - Index),
+                                           Entries = raft_log:read(Index, Index + Batch),
                                            raft_consensus:do_send(
                                              raft_rpc:append_entries(
                                                T1,
@@ -160,7 +162,7 @@ end_of_term(#{term := T0,
                                                Entries),
                                              Follower,
                                              D0),
-                                           A#{Follower => LA+1}
+                                           A#{Follower => Index + Batch + 1}
                                    end;
 
                                (Follower, Index, A) ->

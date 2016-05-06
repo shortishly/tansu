@@ -653,7 +653,31 @@ do_snapshot(#{last_applied := LastApplied, state_machine := StateMachine} = Data
                  [Year, Month, Date, Hour, Minute, Second]))),
     file:make_dir(raft_config:directory(snapshot)),
     raft_sm:snapshot(Name, LastApplied, StateMachine),
+    prune_snapshots(),
     Data.
+
+prune_snapshots() ->
+    prune_snapshots(
+      raft_config:directory(snapshot),
+      raft_config:maximum(snapshot)).
+
+prune_snapshots(Directory, Maximum) ->
+    case file:list_dir(Directory) of
+        {ok, Snapshots} when length(Snapshots) > Maximum ->
+            {_, TooMany} = lists:split(
+                                Maximum, lists:reverse(lists:sort(Snapshots))),
+            lists:foreach(
+              fun
+                  (Superflous) ->
+                      ok = file:delete(filename:join(Directory, Superflous))
+              end,
+              TooMany);
+
+        _ ->
+            nop
+    end.
+                
+
 
 iolist_to_list(IOL) ->
     binary_to_list(iolist_to_binary(IOL)).
