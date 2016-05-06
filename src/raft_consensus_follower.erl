@@ -13,10 +13,12 @@
 %% limitations under the License.
 
 -module(raft_consensus_follower).
+
 -export([add_server/2]).
 -export([append_entries/2]).
 -export([append_entries_response/2]).
 -export([call_election/1]).
+-export([install_snapshot/2]).
 -export([log/2]).
 -export([remove_server/2]).
 -export([request_vote/2]).
@@ -63,6 +65,26 @@ vote(#{granted := _}, Data) ->
     {next_state, follower, Data}.
 
 
+install_snapshot(#{data := {Name, StateMachine, Snapshot},
+                   done := true,
+                   last_config := _,
+                   last_index := LastIndex,
+                   last_term := LastTerm,
+                   leader := L,
+                   term := T},
+                 #{id := Id, term := Current} = Data) when T >= Current ->
+    raft_sm:install_snapshot(Name, Snapshot, StateMachine),
+    {next_state,
+     follower,
+     raft_consensus:do_call_election_after_timeout(
+       raft_consensus:do_send(
+         raft_rpc:append_entries_response(
+           L, Id, T, LastIndex, LastTerm, true),
+         L,
+         Data#{term => raft_ps:term(Id, T),
+               commit_index => LastIndex,
+               state_machine => StateMachine,
+               last_applied => LastIndex}))}.
 
 %% Reply false if term < currentTerm (§5.1)
 append_entries(#{term := Term,
@@ -110,7 +132,7 @@ append_entries(#{entries := Entries,
               D1),
             {next_state, follower, raft_consensus:do_call_election_after_timeout(
                                      D1#{term => raft_ps:term(Id, T),
-                                         leader => L})};
+                                         leader => #{id => L, commit_index => LeaderCommit}})};
 
         {ok, LastIndex} ->
             raft_consensus:do_send(
@@ -120,7 +142,7 @@ append_entries(#{entries := Entries,
               D0),
             {next_state, follower, raft_consensus:do_call_election_after_timeout(
                                      D0#{term => raft_ps:term(Id, T),
-                                         leader => L})};
+                                         leader => #{id => L, commit_index => LeaderCommit}})};
 
         {error, unmatched_term} ->
             #{index := LastIndex, term := LastTerm} = raft_log:last(),
@@ -131,7 +153,7 @@ append_entries(#{entries := Entries,
               D0),
             {next_state, follower, raft_consensus:do_call_election_after_timeout(
                                      D0#{term => raft_ps:term(Id, T),
-                                         leader => L})}
+                                         leader => #{id => L, commit_index => LeaderCommit}})}
     end.
 
 
@@ -139,7 +161,7 @@ append_entries_response(#{term := Term}, #{term := Current} = Data) when Term =<
     {next_state, follower, Data}.
 
 
-log(Command, #{leader := Leader} = Data) ->
+log(Command, #{leader := #{id := Leader}} = Data) ->
     raft_consensus:do_send(
       raft_rpc:log(Command),
       Leader,

@@ -17,8 +17,6 @@
 
 -export([add_connection/6]).
 -export([add_server/1]).
--export([append_entries/6]).
--export([append_entries_response/5]).
 -export([candidate/2]).
 -export([ckv_delete/2]).
 -export([ckv_get/2]).
@@ -50,15 +48,14 @@
 -export([last_applied/0]).
 -export([leader/0]).
 -export([leader/2]).
--export([log/1]).
 -export([quorum/1]).
 -export([remove_server/1]).
--export([request_vote/4]).
+-export([snapshot/0]).
+-export([snapshots/0]).
 -export([start/0]).
 -export([start_link/0]).
 -export([stop/0]).
 -export([terminate/3]).
--export([vote/3]).
 
 
 start() ->
@@ -73,44 +70,11 @@ stop() ->
 add_connection(Pid, Id, IP, Port, Sender, Closer) ->
     send_all_state_event({add_connection, Pid, Id, IP, Port, Sender, Closer}).
 
-demarshall(_, #{request_vote := #{term := Term,
-                                  candidate := Candidate,
-                                  last_log_index := LastLogIndex,
-                                  last_log_term := LastLogTerm}}) ->
-    request_vote(Term, Candidate, LastLogIndex, LastLogTerm);
+demarshall(_, #{} = Payload) ->
+    [Command] = maps:keys(Payload),
+    #{Command := Detail} = Payload,
+    send_event({Command, Detail}).
 
-demarshall(_, #{vote := #{elector := Elector, term := Term, granted := Granted}}) ->
-    vote(Elector, Term, Granted);
-
-demarshall(_, #{append_entries := #{term := LeaderTerm,
-                                    leader := Leader,
-                                    prev_log_index := LastApplied,
-                                    prev_log_term := PrevLogTerm,
-                                    entries := Entries,
-                                    leader_commit := LeaderCommitIndex}}) ->
-    append_entries(
-      LeaderTerm,
-      Leader,
-      LastApplied,
-      PrevLogTerm,
-      Entries,
-      LeaderCommitIndex);
-
-demarshall(_Pid, #{append_entries_response := #{term := Term,
-                                                leader := _Leader,
-                                                prev_log_index := PrevLogIndex,
-                                                prev_log_term := PrevLogTerm,
-                                                follower := Follower,
-                                                success := Success}}) ->
-    append_entries_response(
-      Follower,
-      Term,
-      Success,
-      PrevLogIndex,
-      PrevLogTerm);
-
-demarshall(_Pid, #{log := Command}) ->
-    log(Command).
 
 add_server(URI) ->
     send_event({add_server, URI}).
@@ -129,6 +93,12 @@ expired() ->
 
 info() ->
     sync_send_all_state_event(info).
+
+snapshot() ->
+    sync_send_all_state_event(snapshot).
+
+snapshots() ->
+    sync_send_all_state_event(snapshots).
 
 last_applied() ->
     sync_send_all_state_event(last_applied).
@@ -157,35 +127,6 @@ ckv_test_and_delete(Category, Key, ExistingValue) ->
 
 ckv_test_and_set(Category, Key, ExistingValue, NewValue, TTL) ->
     sync_send_all_state_event({ckv_test_and_set, Category, Key, ExistingValue, NewValue, TTL}).
-    
-    
-    
-    
-
-append_entries_response(Follower, Term, Success, PrevLogIndex, PrevLogTerm) ->
-    send_event({append_entries_response, #{term => Term, follower => Follower,
-                                           prev_log_index => PrevLogIndex,
-                                           prev_log_term => PrevLogTerm,
-                                           success => Success}}).
-
-append_entries(LeaderTerm, Leader, LastApplied, PrevLogTerm, Entries,
-               LeaderCommitIndex) ->
-    send_event({append_entries, #{term => LeaderTerm, leader => Leader,
-                                  prev_log_index => LastApplied,
-                                  prev_log_term => PrevLogTerm,
-                                  entries => Entries,
-                                  leader_commit => LeaderCommitIndex}}).
-
-request_vote(Term, Candidate, LastLogIndex, LastLogTerm) ->
-    send_event({request_vote, #{term => Term, candidate => Candidate,
-                                last_log_index => LastLogIndex,
-                                last_log_term => LastLogTerm}}).
-
-vote(Elector, Term, Granted) ->
-    send_event({vote, #{elector => Elector, term => Term, granted => Granted}}).
-
-log(Command) ->
-    send_event({log, Command}).
 
 send_event(Event) ->
     gen_fsm:send_event(?MODULE, Event).
@@ -228,7 +169,7 @@ handle_event({demarshall, Pid, Message}, State, Data) ->
 
 handle_event({add_connection, Peer, Id, IP, Port, Sender, Closer}, State,Data) ->
     case Data of
-         #{associations := #{Id := _}} ->
+        #{associations := #{Id := _}} ->
             Closer(),
             {next_state, State, Data};
         _ ->
@@ -298,6 +239,15 @@ handle_sync_event(leader, _From, StateName, Data) ->
 
 handle_sync_event(info, _From, StateName, Data) ->
     {reply, do_info(StateName, Data), StateName, Data};
+
+handle_sync_event(snapshot, _From, StateName, #{state_machine := undefined} = Data) ->
+    {reply, ok, StateName, Data};
+
+handle_sync_event(snapshot, _From, StateName, Data) ->
+    {reply, ok, StateName, do_snapshot(Data)};
+
+handle_sync_event(snapshots, _From, StateName, Data) ->
+    {reply, do_snapshots(Data), StateName, Data};
 
 handle_sync_event(expired, _From, leader = StateName, #{state_machine := undefined} = Data) ->
     {reply, {ok, []}, StateName, Data};
@@ -409,12 +359,12 @@ handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{
                Port,
                fun
                    (Message) ->
-                       gun:ws_send(Peer, {binary, raft_rpc:encode(Message)})
-               end,
+                                      gun:ws_send(Peer, {binary, raft_rpc:encode(Message)})
+                              end,
                fun
                    () ->
-                       gun:close(Peer)
-               end,
+                                      gun:close(Peer)
+                              end,
                maps:without([change], Data#{connecting := maps:without([Peer], C)}))};
 
         error ->
@@ -474,84 +424,60 @@ after_timeout(Event, Timeout, #{timer := Timer} = State) ->
 after_timeout(Event, Timeout, State) ->
     State#{timer => gen_fsm:send_event_after(Timeout, Event)}.
 
-do_demarshall(Pid,
-              #{request_vote := #{term := Term,
-                                  candidate := Candidate,
-                                  last_log_index := LastLogIndex,
-                                  last_log_term := LastLogTerm}},
-              Data) ->
+do_demarshall(Pid, #{request_vote := #{candidate := Candidate}} = Command, Data) ->
     eval_or_drop_duplicate_connection(
       Candidate,
       Pid,
       fun
           () ->
-              request_vote(Term, Candidate, LastLogIndex, LastLogTerm)
+              demarshall(Pid, Command)
       end,
       Data);
 
-do_demarshall(Pid,
-              #{vote := #{elector := Elector,
-                          term := Term,
-                          granted := Granted}},
-              Data) ->
+do_demarshall(Pid, #{vote := #{elector := Elector}} = Command, Data) ->
     eval_or_drop_duplicate_connection(
       Elector,
       Pid,
       fun
           () ->
-              vote(Elector, Term, Granted)
+              demarshall(Pid, Command)
       end,
       Data);
 
-do_demarshall(Pid,
-              #{append_entries := #{term := LeaderTerm,
-                                    leader := Leader,
-                                    prev_log_index := LastApplied,
-                                    prev_log_term := PrevLogTerm,
-                                    entries := Entries,
-                                    leader_commit := LeaderCommitIndex}},
-              Data) ->
-            eval_or_drop_duplicate_connection(
-              Leader,
-              Pid,
-              fun
-                  () -> 
-                      append_entries(
-                        LeaderTerm,
-                        Leader,
-                        LastApplied,
-                        PrevLogTerm,
-                        Entries,
-                        LeaderCommitIndex)
-              end,
-              Data);
+do_demarshall(Pid, #{append_entries := #{leader := Leader}} = Command, Data) ->
+    eval_or_drop_duplicate_connection(
+      Leader,
+      Pid,
+      fun
+          () -> 
+              demarshall(Pid, Command)
+      end,
+      Data);
 
-do_demarshall(Pid,
-              #{append_entries_response := #{term := Term,
-                                             leader := _Leader,
-                                             prev_log_index := PrevLogIndex,
-                                             prev_log_term := PrevLogTerm,
-                                             follower := Follower,
-                                             success := Success}},
-              Data) ->
+do_demarshall(Pid, #{install_snapshot := #{leader := Leader}} = Command, Data) ->
+    eval_or_drop_duplicate_connection(
+      Leader,
+      Pid,
+      fun
+          () -> 
+              demarshall(Pid, Command)
+      end,
+      Data);
+
+do_demarshall(Pid, #{append_entries_response := #{follower := Follower}} = Command, Data) ->
     eval_or_drop_duplicate_connection(
       Follower,
       Pid,
       fun
           () ->
-              append_entries_response(
-                Follower,
-                Term,
-                Success,
-                PrevLogIndex,
-                PrevLogTerm)
+              demarshall(Pid, Command)
       end,
       Data);
 
-do_demarshall(_Pid,
-              #{log := Command},
+do_demarshall(Pid,
+              #{log := _} = Command,
               Data) ->
-    log(Command),
+    demarshall(Pid, Command),
     Data.
 
 
@@ -716,3 +642,22 @@ url(IP, Port) ->
         ":" ++
         any:to_list(Port) ++
         raft_config:endpoint(server).
+
+do_snapshot(#{last_applied := LastApplied, state_machine := StateMachine} = Data) ->
+    {{Year, Month, Date}, {Hour, Minute, Second}} = erlang:universaltime(),
+    Name = filename:join(
+             raft_config:directory(snapshot),
+             iolist_to_list(
+               io_lib:format(
+                 "~4..0w-~2..0w-~2..0wT~2..0w:~2..0w:~2..0wZ",
+                 [Year, Month, Date, Hour, Minute, Second]))),
+    file:make_dir(raft_config:directory(snapshot)),
+    raft_sm:snapshot(Name, LastApplied, StateMachine),
+    Data.
+
+iolist_to_list(IOL) ->
+    binary_to_list(iolist_to_binary(IOL)).
+
+do_snapshots(_Data) ->
+    {ok, Snapshots} = file:list_dir(raft_config:directory(snapshot)),
+    lists:sort(Snapshots).

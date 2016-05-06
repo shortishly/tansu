@@ -35,7 +35,7 @@ init(Req, _) ->
                key => Key,
                n => 1}};
 
-        #{follower := #{connections := Connections, leader := Leader}} ->
+        #{follower := #{connections := Connections, leader := #{id := Leader}}} ->
             case Connections of
                 #{Leader := #{host := Host, port := Port}} ->
                     %% We are connected to a follower with an

@@ -17,6 +17,7 @@
 -export([acceptors/1]).
 -export([can/1]).
 -export([db_schema/0]).
+-export([directory/1]).
 -export([enabled/1]).
 -export([endpoint/1]).
 -export([environment/0]).
@@ -31,6 +32,9 @@ can(discover) ->
     envy(to_boolean, can_discover, true);
 can(mesh) ->
     envy(to_boolean, can_mesh, true).
+
+directory(snapshot) ->
+    envy(to_list, snapshot_directory, "/snapshots").
 
 enabled(debug) ->
     envy(to_boolean, debug, false).
@@ -65,6 +69,8 @@ timeout(leader_high) ->
     envy(to_integer, timeout_leader_high, 1000);
 timeout(kv_expiry) ->
     envy(to_integer, timeout_kv_expiry, 1000);
+timeout(kv_snapshot) ->
+    envy(to_integer, timeout_kv_snapshot, 1000 * 60);
 timeout(mnesia_wait_for_tables) ->
     envy(to_integer_or_atom, timeout_mnesia_wait_for_tables, infinity);
 timeout(sync_send_event) ->

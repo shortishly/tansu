@@ -19,6 +19,7 @@
 -export([decode/1]).
 -export([encode/1]).
 -export([heartbeat/5]).
+-export([install_snapshot/8]).
 -export([log/1]).
 -export([request_vote/4]).
 -export([vote/3]).
@@ -68,6 +69,16 @@ heartbeat(LeaderTerm, Leader, LastApplied, PrevLogTerm, LeaderCommitIndex) ->
                           prev_log_term => PrevLogTerm,
                           entries => [],
                           leader_commit => LeaderCommitIndex}}.
+
+install_snapshot(LeaderTerm, Leader, LastIndex, LastTerm, LastConfig, Offset, Data, Done) ->
+    #{install_snapshot => #{term => LeaderTerm,
+                            leader => Leader,
+                            last_index => LastIndex,
+                            last_term => LastTerm,
+                            last_config => LastConfig,
+                            offset => Offset,
+                            data => Data,
+                            done => Done}}.
 
 
 decode(<<Size:32, BERT:Size/bytes>>) ->

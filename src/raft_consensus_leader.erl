@@ -39,7 +39,7 @@ log(Command, #{match_indexes := _, next_indexes := _} = Data) ->
 %% currentTerm = T, convert to follower (§5.1)
 %% TODO
 append_entries(#{term := Term}, #{id := Id,
-                                 match_indexes := _,
+                                  match_indexes := _,
                                   next_indexes := _,
                                   term := Current} = Data) when Term > Current ->
     {next_state, follower, maps:without(
@@ -118,6 +118,7 @@ end_of_term(#{term := T0,
               id := Id,
               match_indexes := _,
               next_indexes := NI,
+              state_machine := StateMachine,
               last_applied := LA} = D0) ->
     T1 = raft_ps:increment(Id, T0),
     {next_state, leader,
@@ -127,19 +128,40 @@ end_of_term(#{term := T0,
          next_indexes := maps:fold(
                            fun
                                (Follower, Index, A) when LA >= Index ->
-                                   Entries = [raft_log:read(I) ||
-                                                 I <-lists:seq(Index, LA)],
-                                   raft_consensus:do_send(
-                                     raft_rpc:append_entries(
-                                       T1,
-                                       Id,
-                                       Index-1,
-                                       raft_log:term_for_index(Index-1),
-                                       CI,
-                                       Entries),
-                                     Follower,
-                                     D0),
-                                   A#{Follower => LA+1};
+                                   case raft_log:first() of
+                                       #{index := LastIndexInSnapshot, command := #{m := raft_sm, f := apply_snapshot, a := [Name]}, term := SnapshotTerm} when Index =< LastIndexInSnapshot ->
+                                           
+                                           {ok, Snapshot} = file:read_file(Name),
+
+                                           raft_consensus:do_send(
+                                             raft_rpc:install_snapshot(
+                                               T1,
+                                               Id,
+                                               LastIndexInSnapshot,
+                                               SnapshotTerm,
+                                               0,
+                                               0,
+                                               {Name, StateMachine, Snapshot},
+                                               true),
+                                             Follower,
+                                             D0),
+                                           
+                                           A#{Follower => LastIndexInSnapshot+1};
+                                       
+                                       _ ->
+                                           Entries = raft_log:read(Index, LA),
+                                           raft_consensus:do_send(
+                                             raft_rpc:append_entries(
+                                               T1,
+                                               Id,
+                                               Index-1,
+                                               raft_log:term_for_index(Index-1),
+                                               CI,
+                                               Entries),
+                                             Follower,
+                                             D0),
+                                           A#{Follower => LA+1}
+                                   end;
 
                                (Follower, Index, A) ->
                                    raft_consensus:do_send(
@@ -169,6 +191,10 @@ vote(#{term := Term}, #{id := Id,
                              raft_consensus:do_call_election_after_timeout(
                                raft_consensus:do_drop_votes(
                                  Data#{term := raft_ps:term(Id, Term)})))};
+
+%% Votes from an earlier term are dropped.
+vote(#{term := Term}, #{term := Current} = Data) when Term < Current ->
+    {next_state, leader, Data};
 
 vote(#{term := T, elector := Elector, granted := true},
      #{term := T,

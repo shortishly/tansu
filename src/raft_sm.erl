@@ -21,8 +21,10 @@
 -export([ckv_test_and_set/6]).
 -export([expired/1]).
 -export([goodbye/0]).
+-export([install_snapshot/3]).
 -export([new/0]).
 -export([notify/3]).
+-export([snapshot/3]).
 -export([subscribe/2]).
 -export([unsubscribe/2]).
 
@@ -99,6 +101,11 @@ ckv_test_and_set(Category, Key, ExistingValue, NewValue, Options, StateMachine) 
 expired(StateMachine) ->
     (raft_config:sm()):expired(StateMachine).
 
+snapshot(Name, LastApplied, StateMachine) ->
+    (raft_config:sm()):snapshot(Name, LastApplied, StateMachine).
+    
+install_snapshot(Name, Data, StateMachine) ->
+    (raft_config:sm()):install_snapshot(Name, Data, StateMachine).
 
 subscribe(Category, Key) ->
     gproc:reg(key(Category, Key)).

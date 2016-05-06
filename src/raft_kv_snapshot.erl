@@ -12,31 +12,35 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_sup).
--behaviour(supervisor).
+-module(raft_kv_snapshot).
+-behaviour(gen_server).
 
+-export([code_change/3]).
+-export([handle_call/3]).
+-export([handle_cast/2]).
+-export([handle_info/2]).
 -export([init/1]).
 -export([start_link/0]).
+-export([terminate/2]).
 
 start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
-init([]) ->
-    {ok, {#{}, [worker(raft_consensus),
-                worker(raft_kv_expiry),
-                worker(raft_kv_snapshot)]}}.
+init([]) ->    
+    {ok, undefined, raft_config:timeout(kv_snapshot)}.
 
-worker(Module) ->
-    worker(Module, transient).
+handle_call(_, _, State) ->
+    {stop, error, State}.
 
-worker(Module, Restart) ->
-    worker(Module, Restart, []).
+handle_cast(_, State) ->
+    {stop, error, State}.
 
-worker(Module, Restart, Parameters) ->
-    worker(Module, Module, Restart, Parameters).
+handle_info(timeout, State) ->
+    ok = raft_consensus:snapshot(),
+    {noreply, State, raft_config:timeout(kv_snapshot)}.
 
-worker(Id, Module, Restart, Parameters) ->
-    #{id => Id,
-      start => {Module, start_link, Parameters},
-      restart => Restart,
-      shutdown => 5000}.
+terminate(_, _) ->
+    ok.
+
+code_change(_, State, _) ->
+    {ok, State}.
