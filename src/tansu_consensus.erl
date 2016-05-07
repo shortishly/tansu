@@ -660,11 +660,11 @@ quorum(#{associations := Associations}) ->
 do_info(State, Data) ->
     maps:fold(
       fun
-          (env, Env, #{State := Detail} = A) ->
-                     A#{State := Detail#{env => any:to_binary(Env)}};
+          (env, Env, A) ->
+                     A#{env => any:to_binary(Env)};
 
-          (connections, Connections, #{State := Detail} = A) ->
-                     A#{State := Detail#{connections => connections(Connections)}};
+          (connections, Connections, A) ->
+                     A#{connections => connections(Connections)};
 
           (state_machine, undefined, A) ->
                      A;
@@ -677,10 +677,10 @@ do_info(State, Data) ->
                              A
                      end;
 
-          (K, V, #{State := Detail} = A) ->
-                     A#{State := Detail#{K => V}}
+          (K, V, A) ->
+                     A#{K => V}
       end,
-      #{State => #{}},
+      #{role => State},
       maps:with([against,
                  commit_index,
                  connections,
