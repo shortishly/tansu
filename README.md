@@ -1,13 +1,14 @@
 # Tansu
 
-Tansu is a distributed key value store designed to maintain
-configuration and other data that must be highly available. Tansu uses
-the [Raft Consensus algorithm](https://raft.github.io) for leadership
-election and distribution of state amongst its members.
+[![Build Status](https://travis-ci.org/shortishly/tansu.svg)](https://travis-ci.org/shortishly/tansu)
 
-Tansu uses [mDNS](https://github.com/shortishly/mdns) for node
-discovery and will automatically form a mesh of nodes sharing the same
-environment.
+
+Tansu is a distributed key value store designed to maintain
+configuration and other data that must be highly available. It uses
+the [Raft Consensus algorithm](https://raft.github.io) for leadership
+election and distribution of state amongst its members. Node discovery
+is via [mDNS](https://github.com/shortishly/mdns) and will
+automatically form a mesh of nodes sharing the same environment.
 
 ## Key Value Store
 
@@ -26,7 +27,7 @@ interface.
 
 # Quick Start
 
-To start a 5 node Tansu cluster:
+To start a 5 node Tansu cluster using Docker:
 
 ```shell
 for i in {1..5}; do 
@@ -35,6 +36,8 @@ for i in {1..5}; do
         -d shortishly/tansu;
 done
 ```
+
+## Key Value Store
 
 Assign the value "world" to the key "hello" via a random node of the
 cluster:
@@ -54,6 +57,8 @@ Delete the key by asking a random member of the cluster:
 ```shell
 curl -X DELETE -i http://$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello
 ```
+
+## Locks
 
 In several different shells request a lock on "abc":
 

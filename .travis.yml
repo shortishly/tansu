@@ -4,4 +4,4 @@ otp_release:
   - 18.2
 
 script:
-  - make
+  - make deps app
