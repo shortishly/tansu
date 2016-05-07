@@ -1,245 +1,111 @@
-# Raft
+# Tansu
 
-An implementation of the
-[Raft Consensus algorithm](https://raft.github.io) using web sockets
-to communicate between peers and mnesia as the log store.
+[![Build Status](https://travis-ci.org/shortishly/tansu.svg)](https://travis-ci.org/shortishly/tansu)
 
-## Quick Start
 
-Each server needs a port to listen to HTTP connections from other
-peers. Start three Raft servers, each on separate port:
+Tansu is a distributed key value store designed to maintain
+configuration and other data that must be highly available. It uses
+the [Raft Consensus algorithm](https://raft.github.io) for leadership
+election and distribution of state amongst its members. Node discovery
+is via [mDNS](https://github.com/shortishly/mdns) and automatically
+forms a mesh of nodes sharing the same environment.
 
-### Server 1
+## Key Value Store
 
-Start the first server on port 8080, as follows:
+Tansu has a REST interface to set, get or delete the value represented
+by a key. It also provides a HTTP
+[Server Sent Event Stream](https://en.wikipedia.org/wiki/Server-sent_events)
+of changes to the store.
+
+## Locks
+
+Tansu provides test and set operations that can be used to operate
+locks through a simple REST based HTTP
+[Server Sent Event Stream](https://en.wikipedia.org/wiki/Server-sent_events)
+interface.
+
+
+# Quick Start
+
+To start a 5 node Tansu cluster using Docker:
 
 ```shell
-HTTP_PORT=8080 make shell
+for i in {1..5}; do 
+    docker run \
+        --name tansu-$(printf %03d $i) \
+        -d shortishly/tansu;
+done
 ```
 
-Then start the second server on port 8081, as follows:
+## Key Value Store
 
-### Server 2:
+Assign the value "world" to the key "hello" via a random node of the
+cluster:
 
 ```shell
-HTTP_PORT=8081 make shell
+curl \
+    -s \
+    http://$(
+        docker inspect \
+            --format={{.NetworkSettings.IPAddress}} \
+            tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello \
+            -d value=world
 ```
 
-Finally the third server on port 8082, as follows:
-
-### Server 3:
+Obtain the current value of "hello" from a random member of the cluster:
 
 ```shell
-HTTP_PORT=8082 make shell
+curl \
+    -s \
+    http://$(
+        docker inspect \
+            --format={{.NetworkSettings.IPAddress}} \
+            tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello
 ```
 
-### Initial State
+Delete the key by asking a random member of the cluster:
 
-You can use `sys:get_state(raft_consensus).` to determine the current
-state of each server:
-
-```erlang
-1> sys:get_state(raft_consensus).
-{candidate,#{against => [],
-             commit_index => 0,
-             connecting => #{},
-             for => [<<"61752590-95f0-4160-b10a-41b405d5210a">>],
-             id => <<"61752590-95f0-4160-b10a-41b405d5210a">>,
-             last_applied => 0,
-             term => 5,
-             timer => #Ref<0.0.4.216>,
-             voted_for => <<"61752590-95f0-4160-b10a-41b405d5210a">>}}
+```shell
+curl \
+    -X DELETE \
+    -i \
+    http://$(
+        docker inspect \
+            --format={{.NetworkSettings.IPAddress}} \
+            tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello
 ```
 
-The candidates haven't been introduced to each other, so each server
-will be flip flopping between the `follower` and `candidate` state
-busily voting for itself - failing to elect themselves as the leader
-without a majority of more than one vote.
+## Locks
 
+In several different shells simultaneously request a lock on "abc":
 
-
-### Introductions
-
-#### Server 1
-
-Firstly verify that there are no active connections by running:
-
-```erlang
-3> ets:i(raft_connection).
-EOT  (q)uit (p)Digits (k)ill /Regexp -->q
+```shell
+curl \
+    -s \
+    http://$(
+        docker inspect \
+            --format={{.NetworkSettings.IPAddress}} \
+            tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/locks/abc
 ```
 
-Each connection is stored as an ETS record in the `raft_connection`
-table. Connect the first server to the second and third servers:
-
-```erlang
-raft_cluster:add("http://localhost:8081/api").
-raft_cluster:add("http://localhost:8082/api").
+```shell
+curl \
+    -s \
+    http://$(
+        docker inspect \
+            --format={{.NetworkSettings.IPAddress}} \
+            tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/locks/abc
 ```
 
-Verify that the connections are in place by:
-
-```erlang
-6> ets:i(raft_connection).
-<1   > {raft_connection,<0.216.0>,<<"edd9c936-ee5d-45f1-946c-fc3ed1cbf833"  ...
-<2   > {raft_connection,<0.217.0>,<<"141b0896-032c-4c66-90ae-248a3a877ed0"  ...
-EOT  (q)uit (p)Digits (k)ill /Regexp -->
+```shell
+curl \
+    -s \
+    http://$(
+        docker inspect \
+            --format={{.NetworkSettings.IPAddress}} \
+            tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/locks/abc
 ```
 
-Each connection is identified the PID used and may also have the UUID
-of the peer (the leader knows all peer UUIDs, other peers may not know
-the UUID for all their connections).
-
-#### Server 2
-
-Verify that one connection is already established between server 1 and server 2:
-
-```erlang
-2> ets:i(raft_connection).
-<1   > {raft_connection,<0.212.0>,<<"61752590-95f0-4160-b10a-41b405d5210a"  ...
-EOT  (q)uit (p)Digits (k)ill /Regexp -->q
-```
-
-Note that in this case the UUID for the connection is the same as the
-ID for server 1 above.
-
-Connect the second server to the third server:
-
-```erlang
-raft_cluster:add("http://localhost:8082/api").
-```
-
-Verify that two connections are now in place:
-
-```erlang
-6> ets:i(raft_connection).
-<1   > {raft_connection,<0.212.0>,<<"61752590-95f0-4160-b10a-41b405d5210a"  ...
-<2   > {raft_connection,<0.218.0>,undefined,#Fun<raft_consensus.0.42427295>}
-EOT  (q)uit (p)Digits (k)ill /Regexp -->q
-```
-
-#### Server 3
-
-This server should already be connected its other peers. You can verify this by:
-
-```erlang
-2> ets:i(raft_connection).
-<1   > {raft_connection,<0.212.0>,<<"61752590-95f0-4160-b10a-41b405d5210a"  ...
-<2   > {raft_connection,<0.216.0>,undefined,#Fun<raft_api_resource.0.30726026>}
-```
-
-### Election
-
-Now that each of the servers is connected we can verify that one
-leader has been elected.
-
-```erlang
-7> sys:get_state(raft_consensus).
-{leader,#{against => [],
-          commit_index => 0,
-          connecting => #{},
-          for => [<<"141b0896-032c-4c66-90ae-248a3a877ed0">>,
-           <<"61752590-95f0-4160-b10a-41b405d5210a">>],
-          id => <<"61752590-95f0-4160-b10a-41b405d5210a">>,
-          last_applied => 0,
-          next_indexes => #{<<"141b0896-032c-4c66-90ae-248a3a877ed0">> => 1,
-            <<"edd9c936-ee5d-45f1-946c-fc3ed1cbf833">> => 1},
-          term => 1173,
-          timer => #Ref<0.0.1.2527>,
-          voted_for => <<"61752590-95f0-4160-b10a-41b405d5210a">>}}
-```
-
-Only 1 leader should be elected with the other 2 servers acting as followers:
-
-```erlang
-7> sys:get_state(raft_consensus).
-{follower,#{commit_index => 0,
-            connecting => #{},
-            id => <<"edd9c936-ee5d-45f1-946c-fc3ed1cbf833">>,
-            last_applied => 0,
-            leader => <<"61752590-95f0-4160-b10a-41b405d5210a">>,
-            term => 1236,
-            timer => #Ref<0.0.2.3012>,
-            voted_for => <<"61752590-95f0-4160-b10a-41b405d5210a">>}}
-```
-
-```erlang
-3> sys:get_state(raft_consensus).
-{follower,#{commit_index => 0,
-            connecting => #{},
-            id => <<"141b0896-032c-4c66-90ae-248a3a877ed0">>,
-            last_applied => 0,
-            leader => <<"61752590-95f0-4160-b10a-41b405d5210a">>,
-            term => 1276,
-            timer => #Ref<0.0.1.3666>,
-            voted_for => <<"61752590-95f0-4160-b10a-41b405d5210a">>}}
-```
-
-### Logging
-
-Using the server that has been elected as the leader, write a log
-entry as follows:
-
-```erlang
-8> raft:log(#{m => maps, f => new, a => []}).
-ok
-9> raft:log(#{m => maps, f => put, a => [a, 1]}).
-ok
-```
-
-Note that the leader's state has also updated:
-
-```erlang
-9> sys:get_state(raft_consensus).
-{leader,#{against => [],
-          commit_index => 0,
-          connecting => #{},
-          for => [<<"141b0896-032c-4c66-90ae-248a3a877ed0">>,
-           <<"61752590-95f0-4160-b10a-41b405d5210a">>],
-          id => <<"61752590-95f0-4160-b10a-41b405d5210a">>,
-          last_applied => 1,
-          next_indexes => #{<<"141b0896-032c-4c66-90ae-248a3a877ed0">> => 2,
-            <<"edd9c936-ee5d-45f1-946c-fc3ed1cbf833">> => 2},
-          state_machine => #{<<"a">> => 1},
-          term => 1442,
-          timer => #Ref<0.0.1.3364>,
-          voted_for => <<"61752590-95f0-4160-b10a-41b405d5210a">>}}
-```
-
-The `last_applied` indicates the latest log entry that has been
-applied, and the `next_indices` shows the next entry to be replicated
-to the other peers.
-
-You can verify the state of the log on the leader by:
-
-```erlang
-10> ets:i(raft_log).
-<1   > {raft_log,1,125,#{a => [],f => <<"new">>,m => <<"maps">>}}
-<2   > {raft_log,2,241,#{a => [<<"a">>,1],f => <<"put">>,m => <<"maps">>}}
-EOT  (q)uit (p)Digits (k)ill /Regexp -->q
-```
-
-The same state should have been replicated to the followers:
-
-```erlang
-8> sys:get_state(raft_consensus).
-{follower,#{commit_index => 0,
-            connecting => #{},
-            id => <<"edd9c936-ee5d-45f1-946c-fc3ed1cbf833">>,
-            last_applied => 1,
-            leader => <<"61752590-95f0-4160-b10a-41b405d5210a">>,
-            term => 1682,
-            timer => #Ref<0.0.2.4349>,
-            voted_for => <<"61752590-95f0-4160-b10a-41b405d5210a">>}}
-```
-
-Note that the `last_applied` is now 1, and that the `raft_log` also
-contains the same entry:
-
-```erlang
-9> ets:i(raft_log).
-<1   > {raft_log,1,125,#{a => [],f => <<"new">>,m => <<"maps">>}}
-<2   > {raft_log,2,241,#{a => [<<"a">>,1],f => <<"put">>,m => <<"maps">>}}
-EOT  (q)uit (p)Digits (k)ill /Regexp -->
-```
-
+One shell is granted the lock, with the remaining shells waiting their
+turn. Drop the lock by hitting `^C` on the holder, the lock is then
+allocated to another waiting shell.
