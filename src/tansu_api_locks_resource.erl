@@ -21,7 +21,7 @@
 
 init(Req, _) ->
     case tansu_consensus:info() of
-        #{leader := _} ->
+        #{role := leader} ->
             self() ! try_lock,
             tansu_api:kv_subscribe(cowboy_req:path_info(Req)),
             do_ping(),
@@ -35,7 +35,7 @@ init(Req, _) ->
                key => Key,
                n => 1}};
 
-        #{follower := #{connections := Connections, leader := Leader}} ->
+        #{role := follower, connections := Connections, leader := Leader} ->
             case Connections of
                 #{Leader := #{host := Host, port := Port}} ->
                     %% We are connected to a follower with an

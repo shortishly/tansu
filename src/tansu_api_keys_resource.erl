@@ -43,7 +43,7 @@ init(Req, _) ->
              cowboy_req:chunked_reply(200, Headers, Req),
              #{info => Info}};
 
-        {<<"GET">>, #{follower := #{leader := _}} = Info, _, _} ->
+        {<<"GET">>, #{role := follower, leader := _} = Info, _, _} ->
             %% followers with an established leader can handle simple
             %% KV GET requests.
             {cowboy_rest,
@@ -53,7 +53,7 @@ init(Req, _) ->
                key => key(Req),
                parent => parent(Req)}};
 
-        {_, #{follower := #{connections := Connections, leader := Leader}}, _, _} ->
+        {_, #{role := follower, connections := Connections, leader := Leader}, _, _} ->
             %% Requests other than GETs should be proxied to the
             %% leader.
             case Connections of
@@ -65,7 +65,7 @@ init(Req, _) ->
                     service_unavailable(Req, #{})
             end;
 
-        {_, #{leader := _} = Info, _, undefined} ->
+        {_, #{role := leader} = Info, _, undefined} ->
             %% The leader can deal directly with any request.
             {cowboy_rest,
              Req,
@@ -74,7 +74,7 @@ init(Req, _) ->
                key => key(Req),
                parent => parent(Req)}};
 
-        {_, #{leader := _} = Info, _, TTL} ->
+        {_, #{role := leader} = Info, _, TTL} ->
             %% The leader can deal directly with any request.
             {cowboy_rest,
              Req,
@@ -84,7 +84,7 @@ init(Req, _) ->
                key => key(Req),
                parent => parent(Req)}};
 
-        {_, #{}, _, _} ->
+        {_, _, _, _} ->
             %% Neither a leader nor a follower with an established
             %% leader then the service is unavailable.
             service_unavailable(Req, #{})
