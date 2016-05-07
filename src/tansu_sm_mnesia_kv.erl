@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_sm_mnesia_kv).
+-module(tansu_sm_mnesia_kv).
 
 -export([ckv_delete/3]).
 -export([ckv_get/3]).
@@ -22,7 +22,7 @@
 -export([expired/1]).
 -export([new/0]).
 
--behaviour(raft_sm).
+-behaviour(tansu_sm).
 
 -include_lib("stdlib/include/qlc.hrl").
 
@@ -30,12 +30,12 @@
 
 
 new() ->
-    case raft_mnesia:create_table(?MODULE, [{attributes,
+    case tansu_mnesia:create_table(?MODULE, [{attributes,
                                              record_info(fields, ?MODULE)},
                                             {index, [parent]},
                                             {type, ordered_set}]) of
         ok ->
-            case raft_sm_mnesia_expiry:new() of
+            case tansu_sm_mnesia_expiry:new() of
                 ok ->
                     {ok, ?MODULE};
                 Other ->
@@ -94,7 +94,7 @@ recursive_remove(ParentCategory, ParentKey) ->
     case mnesia:read(?MODULE, {ParentCategory, ParentKey}) of
         [#?MODULE{value = Value}] ->
             mnesia:delete({?MODULE, {ParentCategory, ParentKey}}),
-            raft_sm:notify(ParentCategory, ParentKey, #{deleted => Value}),
+            tansu_sm:notify(ParentCategory, ParentKey, #{deleted => Value}),
             ok;
         
         [] ->
@@ -116,7 +116,7 @@ cursor_remove(Cursor, Answers) ->
 cancel_expiry(Category, Key) ->
     case mnesia:read(?MODULE, {Category, Key}) of
         [#?MODULE{expiry = Previous}] when is_integer(Previous) ->
-            raft_sm_mnesia_expiry:cancel(Category, Key, Previous);
+            tansu_sm_mnesia_expiry:cancel(Category, Key, Previous);
         _ ->
             nop
     end.
@@ -131,8 +131,8 @@ do_set(Category, Key, Value, #{parent := Parent, ttl := TTL}) ->
                                     value = Value,
                                     expiry = Expiry,
                                     parent = {Category, Parent}}),
-              raft_sm_mnesia_expiry:set(Category, Key, Expiry),
-              raft_sm:notify(Category, Key, #{event => set,
+              tansu_sm_mnesia_expiry:set(Category, Key, Expiry),
+              tansu_sm:notify(Category, Key, #{event => set,
                                               ttl => TTL,
                                               value => Value}),
               ok
@@ -146,7 +146,7 @@ do_set(Category, Key, Value, #{parent := Parent}) ->
               mnesia:write(#?MODULE{key = {Category, Key},
                                     value = Value,
                                     parent = {Category, Parent}}),
-              raft_sm:notify(Category, Key, #{event => set,
+              tansu_sm:notify(Category, Key, #{event => set,
                                               value => Value}),
               ok
       end);
@@ -158,7 +158,7 @@ do_set(Category, Key, Value, #{}) ->
               cancel_expiry(Category, Key),
               mnesia:write(#?MODULE{key = {Category, Key},
                                     value = Value}),
-              raft_sm:notify(Category, Key, #{event => set,
+              tansu_sm:notify(Category, Key, #{event => set,
                                               value => Value}),
               ok
       end).
@@ -179,8 +179,8 @@ do_test_and_set(Category, Key, undefined, NewValue, #{parent := Parent, ttl := T
                                             value = NewValue,
                                             expiry = Expiry,
                                             parent = {Category, Parent}}),
-                      raft_sm_mnesia_expiry:set(Category, Key, Expiry),
-                      raft_sm:notify(Category, Key, #{event => set,
+                      tansu_sm_mnesia_expiry:set(Category, Key, Expiry),
+                      tansu_sm:notify(Category, Key, #{event => set,
                                                       ttl => TTL,
                                                       value => NewValue}),
                       ok
@@ -200,7 +200,7 @@ do_test_and_set(Category, Key, undefined, NewValue, #{parent := Parent}) ->
                       mnesia:write(#?MODULE{key = {Category, Key},
                                             value = NewValue,
                                             parent = {Category, Parent}}),
-                      raft_sm:notify(Category, Key, #{event => set,
+                      tansu_sm:notify(Category, Key, #{event => set,
                                                       value => NewValue}),
                       ok
               end
@@ -217,7 +217,7 @@ do_test_and_set(Category, Key, undefined, NewValue, #{}) ->
                   [] ->
                       mnesia:write(#?MODULE{key = {Category, Key},
                                             value = NewValue}),
-                      raft_sm:notify(Category, Key, #{event => set,
+                      tansu_sm:notify(Category, Key, #{event => set,
                                                       value => NewValue}),
                       ok
               end
@@ -236,8 +236,8 @@ do_test_and_set(Category, Key, ExistingValue, NewValue, #{ttl := TTL}) ->
                       cancel_expiry(Category, Key),
                       mnesia:write(Existing#?MODULE{value = NewValue,
                                                     expiry = Expiry}),
-                      raft_sm_mnesia_expiry:set(Category, Key, Expiry),
-                      raft_sm:notify(Category, Key, #{event => set,
+                      tansu_sm_mnesia_expiry:set(Category, Key, Expiry),
+                      tansu_sm:notify(Category, Key, #{event => set,
                                                       ttl => TTL,
                                                       old_value => ExistingValue,
                                                       value => NewValue}),
@@ -246,8 +246,8 @@ do_test_and_set(Category, Key, ExistingValue, NewValue, #{ttl := TTL}) ->
 
                   [#?MODULE{value = ExistingValue} = Existing] ->
                       mnesia:write(Existing#?MODULE{value = NewValue, expiry = Expiry}),
-                      raft_sm_mnesia_expiry:set(Category, Key, Expiry),
-                      raft_sm:notify(Category, Key, #{event => set,
+                      tansu_sm_mnesia_expiry:set(Category, Key, Expiry),
+                      tansu_sm:notify(Category, Key, #{event => set,
                                                       ttl => TTL,
                                                       old_value => ExistingValue,
                                                       value => NewValue}),
@@ -269,14 +269,14 @@ do_test_and_set(Category, Key, ExistingValue, NewValue, #{}) ->
                       cancel_expiry(Category, Key),
                       mnesia:write(Existing#?MODULE{value = NewValue,
                                                     expiry = undefined}),
-                      raft_sm:notify(Category, Key, #{event => set,
+                      tansu_sm:notify(Category, Key, #{event => set,
                                                       old_value => ExistingValue,
                                                       value => NewValue}),
                       ok;
 
                   [#?MODULE{value = ExistingValue} = Existing] ->
                       mnesia:write(Existing#?MODULE{value = NewValue}),
-                      raft_sm:notify(Category, Key, #{event => set,
+                      tansu_sm:notify(Category, Key, #{event => set,
                                                       old_value => ExistingValue,
                                                       value => NewValue}),
                       ok;
@@ -307,7 +307,7 @@ do_expired() ->
     activity(
       fun
           () ->
-              raft_sm_mnesia_expiry:expired()
+              tansu_sm_mnesia_expiry:expired()
       end).
 
 

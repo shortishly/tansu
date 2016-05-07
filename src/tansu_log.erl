@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_log).
+-module(tansu_log).
 -export([append_entries/3]).
 -export([commit_index/0]).
 -export([create_table/0]).
@@ -22,13 +22,13 @@
 -export([trace/1]).
 -export([write/2]).
 
--include("raft_log.hrl").
+-include("tansu_log.hrl").
 
 create_table() ->
     Attributes = [{attributes, record_info(fields, ?MODULE)},
                   {type, ordered_set}],
 
-    Definition = case raft_config:db_schema() of
+    Definition = case tansu_config:db_schema() of
                      ram ->
                          Attributes;
 

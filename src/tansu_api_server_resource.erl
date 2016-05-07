@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_api_server_resource).
+-module(tansu_api_server_resource).
 
 -export([init/2]).
 -export([terminate/3]).
@@ -21,34 +21,34 @@
 
 
 init(Req, State) ->
-    RaftId = cowboy_req:header(<<"raft-id">>, Req),
+    TansuId = cowboy_req:header(<<"tansu-id">>, Req),
     {PeerIP, _} = cowboy_req:peer(Req),
-    RaftPort = cowboy_req:header(<<"raft-port">>, Req),
-    init(Req, RaftId, inet:ntoa(PeerIP), RaftPort, State).
+    TansuPort = cowboy_req:header(<<"tansu-port">>, Req),
+    init(Req, TansuId, inet:ntoa(PeerIP), TansuPort, State).
 
 
-init(Req, RaftId, RaftHost, RaftPort, State) when RaftId == undefined orelse
-                                                  RaftHost == undefined orelse
-                                                  RaftPort == undefined ->
+init(Req, TansuId, TansuHost, TansuPort, State) when TansuId == undefined orelse
+                                                     TansuHost == undefined orelse
+                                                     TansuPort == undefined ->
     {ok, cowboy_req:reply(400, Req), State};
 
-init(Req, RaftId, RaftHost, RaftPort, State) ->
-    raft_consensus:add_connection(
+init(Req, TansuId, TansuHost, TansuPort, State) ->
+    tansu_consensus:add_connection(
       self(),
-      RaftId,
-      RaftHost,
-      any:to_integer(RaftPort),
+      TansuId,
+      TansuHost,
+      any:to_integer(TansuPort),
       outgoing(self()),
       closer(self())),
     {cowboy_websocket, Req, State}.
 
 
 websocket_handle({binary, Message}, Req, State) ->
-    raft_consensus:demarshall(self(), raft_rpc:decode(Message)),
+    tansu_consensus:demarshall(self(), tansu_rpc:decode(Message)),
     {ok, Req, State}.
 
 websocket_info({message, Message}, Req, State) ->
-    {reply, {binary, raft_rpc:encode(Message)}, Req, State};
+    {reply, {binary, tansu_rpc:encode(Message)}, Req, State};
 
 websocket_info(close, Req, State) ->
     {stop, Req, State}.

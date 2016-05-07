@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_sup).
+-module(tansu_sup).
 -behaviour(supervisor).
 
 -export([init/1]).
@@ -22,8 +22,8 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-    {ok, {#{}, [worker(raft_consensus),
-                worker(raft_kv_expiry)]}}.
+    {ok, {#{}, [worker(tansu_consensus),
+                worker(tansu_kv_expiry)]}}.
 
 worker(Module) ->
     worker(Module, transient).

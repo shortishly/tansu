@@ -12,11 +12,11 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_app).
+-module(tansu_app).
 -behaviour(application).
 
--include("raft_log.hrl").
--include("raft_ps.hrl").
+-include("tansu_log.hrl").
+-include("tansu_ps.hrl").
 
 -export([create_schema/0]).
 -export([create_tables/0]).
@@ -26,9 +26,9 @@
 start(_Type, _Args) ->
     try
         create_schema() andalso create_tables(),
-        {ok, Sup} = raft_sup:start_link(),
-        _ = start_advertiser(raft_tcp_advertiser),
-        [raft:trace(true) || raft_config:enabled(debug)],
+        {ok, Sup} = tansu_sup:start_link(),
+        _ = start_advertiser(tansu_tcp_advertiser),
+        [tansu:trace(true) || tansu_config:enabled(debug)],
         {ok, Sup, #{listeners => [start_http(http)]}}
     catch
         _:Reason ->
@@ -43,14 +43,14 @@ stop(_State) ->
 
 
 start_advertiser(Advertiser) ->
-    _ = [mdns_discover_sup:start_child(Advertiser) || raft_config:can(discover)],
-    _ = [mdns_advertise_sup:start_child(Advertiser) || raft_config:can(advertise)].
+    _ = [mdns_discover_sup:start_child(Advertiser) || tansu_config:can(discover)],
+    _ = [mdns_advertise_sup:start_child(Advertiser) || tansu_config:can(advertise)].
 
 start_http(Prefix) ->
     {ok, _} = cowboy:start_http(
                 Prefix,
-                raft_config:acceptors(Prefix),
-                [{port, raft_config:port(Prefix)}],
+                tansu_config:acceptors(Prefix),
+                [{port, tansu_config:port(Prefix)}],
                 [{env, [dispatch(Prefix)]}]),
     Prefix.
 
@@ -64,11 +64,11 @@ resources(http) ->
 
 
 endpoints() ->
-    [endpoint(server, raft_api_server_resource),
-     endpoint(api, "/keys/[...]", raft_api_keys_resource),
-     endpoint(api, "/locks/[...]", raft_api_locks_resource),
-     endpoint(api, "/swagger.json", raft_oapi_resource),
-     endpoint(api, "/info", raft_api_info_resource)].
+    [endpoint(server, tansu_api_server_resource),
+     endpoint(api, "/keys/[...]", tansu_api_keys_resource),
+     endpoint(api, "/locks/[...]", tansu_api_locks_resource),
+     endpoint(api, "/swagger.json", tansu_oapi_resource),
+     endpoint(api, "/info", tansu_api_info_resource)].
 
 
 endpoint(Endpoint, Module) ->
@@ -78,15 +78,15 @@ endpoint(Endpoint, Pattern, Module) ->
     endpoint(Endpoint, Pattern, Module, []).
 
 endpoint(Endpoint, undefined, Module, Parameters) ->
-    {raft_config:endpoint(Endpoint), Module, Parameters};
+    {tansu_config:endpoint(Endpoint), Module, Parameters};
 
 endpoint(Endpoint, Pattern, Module, Parameters) ->
-    {raft_config:endpoint(Endpoint) ++ Pattern, Module, Parameters}.
+    {tansu_config:endpoint(Endpoint) ++ Pattern, Module, Parameters}.
     
 
 
 create_schema() ->
-    case raft_config:db_schema() of
+    case tansu_config:db_schema() of
         ram ->
             case mnesia:table_info(schema, ram_copies) of
                 [] ->
@@ -119,4 +119,4 @@ create_schema() ->
     end.
 
 create_tables() ->
-    raft_ps:create_table() andalso raft_log:create_table().
+    tansu_ps:create_table() andalso tansu_log:create_table().

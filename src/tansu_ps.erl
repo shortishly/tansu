@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_ps).
+-module(tansu_ps).
 -export([create_table/0]).
 -export([term/1]).
 -export([term/2]).
@@ -21,13 +21,13 @@
 -export([voted_for/1]).
 -export([voted_for/2]).
 
--include("raft_ps.hrl").
+-include("tansu_ps.hrl").
 
 create_table() ->
     Attributes = [{attributes, record_info(fields, ?MODULE)},
                   {type, ordered_set}],
 
-    Definition = case raft_config:db_schema() of
+    Definition = case tansu_config:db_schema() of
                      ram ->
                          Attributes;
 
@@ -127,7 +127,7 @@ voted_for(Id, VotedFor) ->
 new() ->
     activity(
       fun() ->
-              mnesia:write(#?MODULE{id = raft_uuid:new(), term = 0})
+              mnesia:write(#?MODULE{id = tansu_uuid:new(), term = 0})
       end).
 
 activity(F) ->

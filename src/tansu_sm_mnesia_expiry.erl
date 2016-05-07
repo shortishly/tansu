@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_sm_mnesia_expiry).
+-module(tansu_sm_mnesia_expiry).
 -export([cancel/3]).
 -export([expired/0]).
 -export([new/0]).
@@ -21,7 +21,7 @@
 -record(?MODULE, {composite, category, key}).
 
 new() ->
-    raft_mnesia:create_table(?MODULE, [{attributes,
+    tansu_mnesia:create_table(?MODULE, [{attributes,
                                         record_info(fields, ?MODULE)},
                                        {type, ordered_set}]).
 

@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_api).
+-module(tansu_api).
 
 -export([info/0]).
 -export([kv_delete/1]).
@@ -27,34 +27,34 @@
 
 
 info() ->
-    raft_consensus:info().
+    tansu_consensus:info().
 
 kv_delete(Key) ->
-    raft_consensus:ckv_delete(category(), Key).
+    tansu_consensus:ckv_delete(category(), Key).
 
 kv_get(Key) ->
-    raft_consensus:ckv_get(category(), Key).
+    tansu_consensus:ckv_get(category(), Key).
 
 kv_set(Key, Value) ->
     kv_set(Key, Value, #{}).
 
 kv_set(Key, Value, Options) ->
-    raft_consensus:ckv_set(category(), Key, Value, Options).
+    tansu_consensus:ckv_set(category(), Key, Value, Options).
 
 kv_test_and_delete(Key, ExistingValue) ->
-    raft_consensus:ckv_test_and_delete(category(), Key, ExistingValue).
+    tansu_consensus:ckv_test_and_delete(category(), Key, ExistingValue).
 
 kv_test_and_set(Key, ExistingValue, NewValue) ->
     kv_test_and_set(Key, ExistingValue, NewValue, #{}).
 
 kv_test_and_set(Key, ExistingValue, NewValue, Options) ->
-    raft_consensus:ckv_test_and_set(category(), Key, ExistingValue, NewValue, Options).
+    tansu_consensus:ckv_test_and_set(category(), Key, ExistingValue, NewValue, Options).
 
 kv_subscribe(Key) ->
-    raft_sm:subscribe(category(), Key).
+    tansu_sm:subscribe(category(), Key).
 
 kv_unsubscribe(Key) ->
-    raft_sm:unsubscribe(category(), Key).
+    tansu_sm:unsubscribe(category(), Key).
 
 category() ->
     user.

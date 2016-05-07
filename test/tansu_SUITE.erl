@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_SUITE).
+-module(tansu_SUITE).
 -compile(export_all).
 
 -include_lib("common_test/include/ct.hrl").
@@ -32,7 +32,7 @@ init_per_suite(Config) ->
          start_kvc(
            start_cluster(
              [{cluster_size, 5},
-              {cluster_env, raft_uuid:new()} |
+              {cluster_env, tansu_uuid:new()} |
               connect_to_docker(
                 [{docker_host, "tcp://localhost:2375"},
                  {docker_cert_path, undefined},
@@ -185,9 +185,9 @@ stop_kvc(Config) ->
     lists:keydelete(kvc, 1, Config).
 
 start_container(Docker, Env) ->
-    Configuration = #{<<"Image">> => <<"shortishly/raft">>,
-                      <<"Env">> => maybe_add_authorized_keys([<<"RAFT_ENVIRONMENT=", Env/bytes>>,
-                                                              <<"RAFT_DEBUG=true">>])},
+    Configuration = #{<<"Image">> => <<"shortishly/tansu">>,
+                      <<"Env">> => maybe_add_authorized_keys([<<"TANSU_ENVIRONMENT=", Env/bytes>>,
+                                                              <<"TANSU_DEBUG=false">>])},
     {ok, #{<<"Id">> := Id}} = docker_client:create_container(Docker, Configuration),
     ok = docker_client:start_container(Docker, Id),
     {ok, #{<<"NetworkSettings">> := #{<<"Networks">> := #{<<"bridge">> := #{<<"IPAddress">> := IP}}}}} = docker_client:inspect_container(Docker, Id),

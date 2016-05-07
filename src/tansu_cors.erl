@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_cors).
+-module(tansu_cors).
 -export([allow_origin/1]).
 -export([options/3]).
 

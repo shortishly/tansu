@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_sm).
+-module(tansu_sm).
 
 -export([ckv_delete/3]).
 -export([ckv_get/3]).
@@ -79,25 +79,25 @@
                                                                 StateMachine :: state_machine()}.
 
 new() ->
-    (raft_config:sm()):new().
+    (tansu_config:sm()):new().
 
 ckv_get(Category, Key, StateMachine) ->
-    (raft_config:sm()):ckv_get(Category, Key, StateMachine).
+    (tansu_config:sm()):ckv_get(Category, Key, StateMachine).
 
 ckv_delete(Category, Key, StateMachine) ->
-    (raft_config:sm()):ckv_delete(Category, Key, StateMachine).
+    (tansu_config:sm()):ckv_delete(Category, Key, StateMachine).
 
 ckv_set(Category, Key, Value, Options, StateMachine) ->
-    (raft_config:sm()):ckv_set(Category, Key, Value, Options, StateMachine).
+    (tansu_config:sm()):ckv_set(Category, Key, Value, Options, StateMachine).
 
 ckv_test_and_delete(Category, Key, ExistingValue, StateMachine) ->
-    (raft_config:sm()):ckv_test_and_delete(Category, Key, ExistingValue, StateMachine).
+    (tansu_config:sm()):ckv_test_and_delete(Category, Key, ExistingValue, StateMachine).
 
 ckv_test_and_set(Category, Key, ExistingValue, NewValue, Options, StateMachine) ->
-    (raft_config:sm()):ckv_test_and_set(Category, Key, ExistingValue, NewValue, Options, StateMachine).
+    (tansu_config:sm()):ckv_test_and_set(Category, Key, ExistingValue, NewValue, Options, StateMachine).
 
 expired(StateMachine) ->
-    (raft_config:sm()):expired(StateMachine).
+    (tansu_config:sm()):expired(StateMachine).
 
 
 subscribe(Category, Key) ->

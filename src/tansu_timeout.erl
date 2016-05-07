@@ -12,15 +12,15 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_timeout).
+-module(tansu_timeout).
 -export([election/0]).
 -export([leader/0]).
 
 
 election() ->
-    crypto:rand_uniform(raft_config:timeout(election_low),
-                        raft_config:timeout(election_high)).
+    crypto:rand_uniform(tansu_config:timeout(election_low),
+                        tansu_config:timeout(election_high)).
 
 leader() ->
-    crypto:rand_uniform(raft_config:timeout(leader_low),
-                        raft_config:timeout(leader_high)).
+    crypto:rand_uniform(tansu_config:timeout(leader_low),
+                        tansu_config:timeout(leader_high)).

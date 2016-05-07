@@ -13,7 +13,7 @@
 %% limitations under the License.
 
 
--module(raft_api_proxy_resource).
+-module(tansu_api_proxy_resource).
 
 -export([init/2]).
 -export([info/3]).

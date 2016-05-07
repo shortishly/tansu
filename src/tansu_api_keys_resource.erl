@@ -13,7 +13,7 @@
 %% limitations under the License.
 
 
--module(raft_api_keys_resource).
+-module(tansu_api_keys_resource).
 
 -export([allowed_methods/2]).
 -export([content_types_accepted/2]).
@@ -29,7 +29,7 @@
 
 init(Req, _) ->
     case {cowboy_req:method(Req),
-          raft_consensus:info(),
+          tansu_consensus:info(),
           maps:from_list(cowboy_req:parse_qs(Req)),
           cowboy_req:header(<<"ttl">>, Req)} of
 
@@ -38,7 +38,7 @@ init(Req, _) ->
             %% the cluster.
 	    Headers = [{<<"content-type">>, <<"text/event-stream">>},
 		       {<<"cache-control">>, <<"no-cache">>}],
-            raft_api:kv_subscribe(cowboy_req:path_info(Req)),
+            tansu_api:kv_subscribe(cowboy_req:path_info(Req)),
 	    {cowboy_loop,
              cowboy_req:chunked_reply(200, Headers, Req),
              #{info => Info}};
@@ -58,7 +58,7 @@ init(Req, _) ->
             %% leader.
             case Connections of
                 #{Leader := #{host := Host, port := Port}} ->
-                    raft_api_proxy_resource:init(
+                    tansu_api_proxy_resource:init(
                       Req, #{host => binary_to_list(Host), port => Port});
 
                 #{} ->
@@ -156,7 +156,7 @@ from_form_url_encoded(Req, _, State) ->
     bad_request(Req, State).
 
 kv_set(Req, Key, Value, State) ->
-    case raft_api:kv_set(Key, Value, maps:with([parent, ttl], State)) of
+    case tansu_api:kv_set(Key, Value, maps:with([parent, ttl], State)) of
         ok ->
             {true, Req, State};
         
@@ -165,12 +165,12 @@ kv_set(Req, Key, Value, State) ->
     end.
 
 delete_resource(Req, #{key := Key} = State) ->
-    {raft_api:kv_delete(Key) == ok, Req, State}.
+    {tansu_api:kv_delete(Key) == ok, Req, State}.
 
 resource_exists(Req, #{key := Key} = State) ->
     case cowboy_req:method(Req) of
         <<"GET">> ->
-            case raft_api:kv_get(Key) of
+            case tansu_api:kv_get(Key) of
                 {ok, Value} ->
                     {true, Req, State#{value => Value}};
 
@@ -186,7 +186,7 @@ resource_exists(Req, #{key := Key} = State) ->
     end.
 
 
-info(#{id := Id, event := Event, data := Data,module := raft_sm}, Req, State) ->
+info(#{id := Id, event := Event, data := Data, module := tansu_sm}, Req, State) ->
     {cowboy_req:chunk(
        ["id: ",
         any:to_list(Id),
@@ -207,7 +207,7 @@ terminate(Reason, Req, #{proxy := Proxy} = State) ->
 
 terminate(_Reason, _Req, _) ->
     %% nothing to clean up here.
-    raft_sm:goodbye().
+    tansu_sm:goodbye().
                 
 bad_request(Req, State) ->                        
     stop_with_code(400, Req, State).

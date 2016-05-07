@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_consensus_leader).
+-module(tansu_concensus_leader).
 -export([add_server/2]).
 -export([append_entries/2]).
 -export([append_entries_response/2]).
@@ -26,14 +26,14 @@ add_server(_, #{change := _, match_indexes := _, next_indexes := _} = Data) ->
     %% change already in progress
     {next_state, leader, Data};
 add_server(URI, #{match_indexes := _, next_indexes := _} = Data) ->
-    {next_state, leader, raft_consensus:do_add_server(URI, Data)}.
+    {next_state, leader, tansu_consensus:do_add_server(URI, Data)}.
 
 remove_server(_, #{change := _, match_indexes := _, next_indexes := _} = Data) ->
     %% change already in progress
     {next_state, leader, Data}.
 
 log(Command, #{match_indexes := _, next_indexes := _} = Data) ->
-    {next_state, leader, raft_consensus:do_log(Command, Data)}.
+    {next_state, leader, tansu_consensus:do_log(Command, Data)}.
 
 %% If RPC request or response contains term T > currentTerm: set
 %% currentTerm = T, convert to follower (§5.1)
@@ -44,9 +44,9 @@ append_entries(#{term := Term}, #{id := Id,
                                   term := Current} = Data) when Term > Current ->
     {next_state, follower, maps:without(
                              [match_indexes, next_indexes],
-                             raft_consensus:do_call_election_after_timeout(
-                               raft_consensus:do_drop_votes(
-                                 Data#{term := raft_ps:term(Id, Term)})))};
+                             tansu_consensus:do_call_election_after_timeout(
+                               tansu_consensus:do_drop_votes(
+                                 Data#{term := tansu_ps:term(Id, Term)})))};
 
 %% Reply false if term < currentTerm (§5.1)
 append_entries(#{term := Term,
@@ -57,8 +57,8 @@ append_entries(#{term := Term,
                  match_indexes := _,
                  next_indexes := _,
                  id := Id} = Data) when Term < Current ->
-    raft_consensus:do_send(
-      raft_rpc:append_entries_response(
+    tansu_consensus:do_send(
+      tansu_rpc:append_entries_response(
         Leader, Id, Current, PrevLogIndex, PrevLogTerm, false),
       Leader,
       Data),
@@ -68,9 +68,9 @@ append_entries(#{term := Term,
 append_entries_response(#{term := Term}, #{id := Id, term := Current} = Data) when Term > Current ->
     {next_state, follower, maps:without(
                              [match_indexes, next_indexes],
-                             raft_consensus:do_call_election_after_timeout(
-                               raft_consensus:do_drop_votes(
-                                 Data#{term := raft_ps:term(Id, Term)})))};
+                             tansu_consensus:do_call_election_after_timeout(
+                               tansu_consensus:do_drop_votes(
+                                 Data#{term := tansu_ps:term(Id, Term)})))};
 
 append_entries_response(#{term := Term}, #{term := Current} = Data) when Term < Current ->
     {next_state, leader, Data};
@@ -119,22 +119,22 @@ end_of_term(#{term := T0,
               match_indexes := _,
               next_indexes := NI,
               last_applied := LA} = D0) ->
-    T1 = raft_ps:increment(Id, T0),
+    T1 = tansu_ps:increment(Id, T0),
     {next_state, leader,
-     raft_consensus:do_end_of_term_after_timeout(
+     tansu_consensus:do_end_of_term_after_timeout(
        D0#{
          term => T1,
          next_indexes := maps:fold(
                            fun
                                (Follower, Index, A) when LA >= Index ->
-                                   Entries = [raft_log:read(I) ||
+                                   Entries = [tansu_log:read(I) ||
                                                  I <-lists:seq(Index, LA)],
-                                   raft_consensus:do_send(
-                                     raft_rpc:append_entries(
+                                   tansu_consensus:do_send(
+                                     tansu_rpc:append_entries(
                                        T1,
                                        Id,
                                        Index-1,
-                                       raft_log:term_for_index(Index-1),
+                                       tansu_log:term_for_index(Index-1),
                                        CI,
                                        Entries),
                                      Follower,
@@ -142,12 +142,12 @@ end_of_term(#{term := T0,
                                    A#{Follower => LA+1};
 
                                (Follower, Index, A) ->
-                                   raft_consensus:do_send(
-                                     raft_rpc:append_entries(
+                                   tansu_consensus:do_send(
+                                     tansu_rpc:append_entries(
                                        T1,
                                        Id,
                                        Index-1,
-                                       raft_log:term_for_index(Index-1),
+                                       tansu_log:term_for_index(Index-1),
                                        CI,
                                        []),
                                      Follower,
@@ -166,9 +166,9 @@ vote(#{term := Term}, #{id := Id,
                         term := Current} = Data) when Term > Current ->
     {next_state, follower, maps:without(
                              [match_indexes, next_indexes],
-                             raft_consensus:do_call_election_after_timeout(
-                               raft_consensus:do_drop_votes(
-                                 Data#{term := raft_ps:term(Id, Term)})))};
+                             tansu_consensus:do_call_election_after_timeout(
+                               tansu_consensus:do_drop_votes(
+                                 Data#{term := tansu_ps:term(Id, Term)})))};
 
 vote(#{term := T, elector := Elector, granted := true},
      #{term := T,
@@ -192,9 +192,9 @@ request_vote(#{term := Term},
                term := Current} = Data) when Term > Current ->
     {next_state, follower, maps:without(
                              [match_indexes, next_indexes],
-                             raft_consensus:do_call_election_after_timeout(
-                               raft_consensus:do_drop_votes(
-                                 Data#{term := raft_ps:term(Id, Term)})))};
+                             tansu_consensus:do_call_election_after_timeout(
+                               tansu_consensus:do_drop_votes(
+                                 Data#{term := tansu_ps:term(Id, Term)})))};
 
 request_vote(#{term := Term,
                candidate := Candidate},
@@ -202,8 +202,8 @@ request_vote(#{term := Term,
                commit_index := CI,
                match_indexes := _,
                next_indexes := NI} = Data) ->
-    raft_consensus:do_send(
-      raft_rpc:vote(Id, Term, false),
+    tansu_consensus:do_send(
+      tansu_rpc:vote(Id, Term, false),
       Candidate,
       Data),
     {next_state, leader, Data#{next_indexes := NI#{Candidate => CI + 1}}}.
@@ -230,34 +230,34 @@ do_apply_to_state_machine(LastApplied, CommitIndex, State) ->
     do_apply_to_state_machine(lists:seq(LastApplied, CommitIndex), State).
 
 do_apply_to_state_machine([H | T], undefined) ->
-    case raft_log:read(H) of
+    case tansu_log:read(H) of
         #{command := #{f := F, a := A}} ->
-            {_, State} = apply(raft_sm, F, A),
+            {_, State} = apply(tansu_sm, F, A),
             do_apply_to_state_machine(T, State);
 
         #{command := #{f := F}} ->
-            {_, State} = apply(raft_sm, F, []),
+            {_, State} = apply(tansu_sm, F, []),
             do_apply_to_state_machine(T, State)
     end;
 
 do_apply_to_state_machine([H | T], S0) ->
-    case raft_log:read(H) of
+    case tansu_log:read(H) of
         #{command := #{f := F, a := A, from := From}} ->
-            {Result, S1}  = apply(raft_sm, F, A ++ [S0]),
+            {Result, S1}  = apply(tansu_sm, F, A ++ [S0]),
             gen_fsm:reply(From, Result),
             do_apply_to_state_machine(T, S1);
 
         #{command := #{f := F, a := A}} ->
-            {_, S1} = apply(raft_sm, F, A ++ [S0]),
+            {_, S1} = apply(tansu_sm, F, A ++ [S0]),
             do_apply_to_state_machine(T, S1);
 
         #{command := #{f := F, from := From}} ->
-            {Result, S1} = apply(raft_sm, F, [S0]),
+            {Result, S1} = apply(tansu_sm, F, [S0]),
             gen_fsm:reply(From, Result),
             do_apply_to_state_machine(T, S1);
 
         #{command := #{f := F}} ->
-            {_, S1} = apply(raft_sm, F, [S0]),
+            {_, S1} = apply(tansu_sm, F, [S0]),
             do_apply_to_state_machine(T, S1)
     end;
 

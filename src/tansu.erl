@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft).
+-module(tansu).
 
 -export([description/0]).
 -export([start/0]).

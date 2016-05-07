@@ -13,6 +13,6 @@ ENV TZ=GMT
 
 ENTRYPOINT exec ${BINDIR}/erlexec -boot_var /lib -boot ${BOOT} -noinput -config ${CONFIG} -args_file ${ARGS_FILE}
 
-ADD _rel/raft_release/ /
+ADD _rel/tansu_release/ /
 
 EXPOSE 22 80
