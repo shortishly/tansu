@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_oapi_resource).
+-module(tansu_oapi_resource).
 
 -export([allowed_methods/2]).
 -export([content_types_provided/2]).
@@ -21,13 +21,13 @@
 -export([to_json/2]).
 
 init(Req, _) ->
-    {cowboy_rest, raft_cors:allow_origin(Req), #{}}.
+    {cowboy_rest, tansu_cors:allow_origin(Req), #{}}.
 
 allowed_methods(Req, State) ->
     {allowed(), Req, State}.
 
 options(Req, State) ->
-    raft_cors:options(Req, State, allowed()).
+    tansu_cors:options(Req, State, allowed()).
 
 content_types_provided(Req, State) ->
     {[{{<<"application">>, <<"json">>, '*'}, to_json}], Req, State}.
@@ -45,8 +45,8 @@ root(Req) ->
     #{
       swagger => <<"2.0">>,
       info => info(),
-      host => <<(cowboy_req:host(Req))/bytes, ":", (any:to_binary(raft_config:port(http)))/bytes>>,
-      <<"basePath">> => any:to_binary(raft_config:endpoint(api)),
+      host => <<(cowboy_req:host(Req))/bytes, ":", (any:to_binary(tansu_config:port(http)))/bytes>>,
+      <<"basePath">> => any:to_binary(tansu_config:endpoint(api)),
       schemes => [<<"http">>],
       consumes => [json()],
       produces => [json()],
@@ -58,8 +58,8 @@ json() ->
 
 info() ->
     #{
-      title => raft,
-      description => any:to_binary(raft:description()),
+      title => tansu,
+      description => any:to_binary(tansu:description()),
       <<"termsOfService">> => <<"http://swagger.io/terms">>,
       contact => #{
         name => <<"API Support">>,
@@ -70,7 +70,7 @@ info() ->
         name => <<"Apache 2.0">>,
         url => <<"http://www.apache.org/licenses/LICENSE-2.0.html">>
        },
-      version => any:to_binary(raft:vsn())
+      version => any:to_binary(tansu:vsn())
      }.
 
 paths() ->

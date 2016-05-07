@@ -12,8 +12,4 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_uuid).
--export([new/0]).
-
-new() ->
-    rfc4122:external(rfc4122:v4()).
+-record(tansu_log, {index, term, command}).

@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_consensus).
+-module(tansu_consensus).
 -behaviour(gen_fsm).
 
 -export([add_connection/6]).
@@ -195,28 +195,28 @@ send_all_state_event(Event) ->
 
 sync_send_all_state_event(Event) ->
     gen_fsm:sync_send_all_state_event(
-      ?MODULE, Event, raft_config:timeout(sync_send_event)).
+      ?MODULE, Event, tansu_config:timeout(sync_send_event)).
 
 
 init([]) ->
-    Id = raft_ps:id(),
+    Id = tansu_ps:id(),
     %% subscribe to mDNS advertisements if we are can mesh
-    _ = [mdns:subscribe(advertisement) || raft_config:can(mesh)],
+    _ = [mdns:subscribe(advertisement) || tansu_config:can(mesh)],
     {ok, follower, do_call_election_after_timeout(
                      do_voted_for(
-                       #{term => raft_ps:term(Id),
-                         env => raft_config:environment(),
+                       #{term => tansu_ps:term(Id),
+                         env => tansu_config:environment(),
                          associations => #{},
                          connections => #{},
                          id => Id,
-                         commit_index => raft_log:commit_index(),
+                         commit_index => tansu_log:commit_index(),
                          last_applied => 0,
                          state_machine => undefined,
                          connecting => #{}}))}.
 
 
 do_voted_for(#{id := Id} = Data) ->
-    case raft_ps:voted_for(Id) of
+    case tansu_ps:voted_for(Id) of
         undefined ->
             maps:without([voted_for], Data);
         VotedFor ->
@@ -267,7 +267,7 @@ handle_event(_, _, Data) ->
     {stop, error, Data}.
 
 handle_sync_event({ckv_get, Category, Key}, _, StateName, #{state_machine := StateMachine} = Data) ->
-    {Result, StateMachine} = raft_sm:ckv_get(Category, Key, StateMachine),
+    {Result, StateMachine} = tansu_sm:ckv_get(Category, Key, StateMachine),
     {reply, Result, StateName, Data};
 
 handle_sync_event(Event, From, StateName = leader, Data) when is_tuple(Event) ->
@@ -303,7 +303,7 @@ handle_sync_event(expired, _From, leader = StateName, #{state_machine := undefin
     {reply, {ok, []}, StateName, Data};
 
 handle_sync_event(expired, _From, leader = StateName, #{state_machine := StateMachine} = Data) ->
-    {Expired, _} = raft_sm:expired(StateMachine),
+    {Expired, _} = tansu_sm:expired(StateMachine),
     {reply, {ok, Expired}, StateName, Data};
 
 handle_sync_event(expired, _From, StateName, Data) ->
@@ -314,7 +314,7 @@ handle_sync_event(stop, _From, _Name, Data) ->
 
 handle_info({_,
              {mdns, advertisement},
-             #{advertiser := raft_tcp_advertiser,
+             #{advertiser := tansu_tcp_advertiser,
                id := Id,
                env := Env,
                port := Port,
@@ -389,9 +389,9 @@ handle_info({gun_up, Peer, _}, Name, #{id := Id, connecting := Connecting} = Dat
     case maps:find(Peer, Connecting) of
         {ok, Path} ->
             gun:ws_upgrade(
-              Peer, Path, [{<<"raft-id">>, Id},
-                           {<<"raft-host">>, any:to_binary(net_adm:localhost())},
-                           {<<"raft-port">>, any:to_binary(raft_config:port(http))}]),
+              Peer, Path, [{<<"tansu-id">>, Id},
+                           {<<"tansu-host">>, any:to_binary(net_adm:localhost())},
+                           {<<"tansu-port">>, any:to_binary(tansu_config:port(http))}]),
             {next_state, Name, Data};
 
         error ->
@@ -409,7 +409,7 @@ handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{
                Port,
                fun
                    (Message) ->
-                       gun:ws_send(Peer, {binary, raft_rpc:encode(Message)})
+                       gun:ws_send(Peer, {binary, tansu_rpc:encode(Message)})
                end,
                fun
                    () ->
@@ -422,7 +422,7 @@ handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{
     end;
 
 handle_info({gun_ws, Peer, {binary, Message}}, Name, Data) ->
-    {next_state, Name, do_demarshall(Peer, raft_rpc:decode(Message), Data)};
+    {next_state, Name, do_demarshall(Peer, tansu_rpc:decode(Message), Data)};
 
 handle_info({gun_ws, Pid, {close, _, _}}, Name, Data) ->
     gun:close(Pid),
@@ -437,36 +437,36 @@ code_change(_OldVsn, State, Data, _Extra) ->
 
 
 follower({Event, Detail}, Data) ->
-    raft_consensus_follower:Event(Detail, Data);
+    tansu_consensus_follower:Event(Detail, Data);
 follower(Event, Data) when is_atom(Event) ->
-    raft_consensus_follower:Event(Data).
+    tansu_consensus_follower:Event(Data).
 
 
 candidate({Event, Detail}, Data) ->
-    raft_consensus_candidate:Event(Detail, Data);
+    tansu_consensus_candidate:Event(Detail, Data);
 candidate(Event, Data) when is_atom(Event) ->
-    raft_consensus_candidate:Event(Data).
+    tansu_consensus_candidate:Event(Data).
 
 
 leader({Event, Detail}, Data) ->
-    raft_consensus_leader:Event(Detail, Data);
+    tansu_consensus_leader:Event(Detail, Data);
 leader(Event, Data) when is_atom(Event) ->
-    raft_consensus_leader:Event(Data).
+    tansu_consensus_leader:Event(Data).
 
 
 do_drop_votes(#{id := Id} = Data) ->
-    raft_ps:voted_for(Id, undefined),
+    tansu_ps:voted_for(Id, undefined),
     maps:without([voted_for, for, against, leader], Data).
 
 
 do_end_of_term_after_timeout(State) ->
-    after_timeout(end_of_term, raft_timeout:leader(), State).
+    after_timeout(end_of_term, tansu_timeout:leader(), State).
 
 do_call_election_after_timeout(State) ->
-    after_timeout(call_election, raft_timeout:election(), State).
+    after_timeout(call_election, tansu_timeout:election(), State).
 
 do_rerun_election_after_timeout(State) ->
-    after_timeout(rerun_election, raft_timeout:election(), State).
+    after_timeout(rerun_election, tansu_timeout:election(), State).
 
 after_timeout(Event, Timeout, #{timer := Timer} = State) ->
     _ = gen_fsm:cancel_timer(Timer),
@@ -630,17 +630,17 @@ do_add_server(URI, #{connecting := Connecting} = Data) ->
 
 
 do_log(Command, #{id := Id, term := Term, commit_index := CI, next_indexes := NI} = Data) ->
-    LastLogIndex = raft_log:write(Term, Command),
+    LastLogIndex = tansu_log:write(Term, Command),
      Data#{
        next_indexes := maps:fold(
                          fun
                              (Follower, Index, A) when LastLogIndex >= Index ->
                                  do_send(
-                                   raft_rpc:append_entries(
+                                   tansu_rpc:append_entries(
                                      Term,
                                      Id,
                                      LastLogIndex-1,
-                                     raft_log:term_for_index(LastLogIndex-1),
+                                     tansu_log:term_for_index(LastLogIndex-1),
                                      CI,
                                      [#{term => Term, command => Command}]),
                                    Follower,
@@ -655,7 +655,7 @@ do_log(Command, #{id := Id, term := Term, commit_index := CI, next_indexes := NI
 
 
 quorum(#{associations := Associations}) ->
-    max(raft_config:minimum(quorum), ((map_size(Associations) + 1) div 2) + 1).
+    max(tansu_config:minimum(quorum), ((map_size(Associations) + 1) div 2) + 1).
 
 do_info(State, Data) ->
     maps:fold(
@@ -670,7 +670,7 @@ do_info(State, Data) ->
                      A;
 
           (state_machine, StateMachine, A) ->
-                     case raft_sm:ckv_get(system, [<<"cluster">>], StateMachine) of
+                     case tansu_sm:ckv_get(system, [<<"cluster">>], StateMachine) of
                          {{ok, Id}, _} ->
                              A#{cluster => Id};
                          _ ->
@@ -715,4 +715,4 @@ url(IP, Port) ->
         inet:ntoa(IP) ++
         ":" ++
         any:to_list(Port) ++
-        raft_config:endpoint(server).
+        tansu_config:endpoint(server).

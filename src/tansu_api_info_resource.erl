@@ -12,12 +12,12 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_api_info_resource).
+-module(tansu_api_info_resource).
 
 -export([init/2]).
 
 init(Req, Opts) ->
-    [Major, Minor, Patch] = string:tokens(raft:vsn(), "."),
+    [Major, Minor, Patch] = string:tokens(tansu:vsn(), "."),
     {ok,
      cowboy_req:reply(
        200,
@@ -30,7 +30,7 @@ init(Req, Opts) ->
                              end,
                              #{},
                              application:which_applications()),
-           consensus => raft_consensus:info(),
+           consensus => tansu_consensus:info(),
            version => #{major => any:to_integer(Major),
                         minor => any:to_integer(Minor),
                         patch => any:to_integer(Patch)}}),

@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_config).
+-module(tansu_config).
 
 -export([acceptors/1]).
 -export([can/1]).
@@ -36,7 +36,7 @@ enabled(debug) ->
     envy(to_boolean, debug, false).
 
 sm() ->
-    envy(to_atom, sm, raft_sm_mnesia_kv).
+    envy(to_atom, sm, tansu_sm_mnesia_kv).
 
 endpoint(server) ->
     endpoint(api) ++ envy(to_list, endpoint_server, "/server");
@@ -78,7 +78,7 @@ minimum(quorum) ->
     envy(to_integer, minimum_quorum, 3).
 
 envy(To, Name, Default) ->
-    envy:To(raft, Name, default(Default)).
+    envy:To(tansu, Name, default(Default)).
 
 default(Default) ->
     [os_env, app_env, {default, Default}].

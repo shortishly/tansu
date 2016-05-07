@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_rpc).
+-module(tansu_rpc).
 
 -export([append_entries/6]).
 -export([append_entries_response/6]).

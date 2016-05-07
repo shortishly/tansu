@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_kv_expiry).
+-module(tansu_kv_expiry).
 -behaviour(gen_server).
 
 -export([code_change/3]).
@@ -27,7 +27,7 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->    
-    {ok, undefined, raft_config:timeout(kv_expiry)}.
+    {ok, undefined, tansu_config:timeout(kv_expiry)}.
 
 handle_call(_, _, State) ->
     {stop, error, State}.
@@ -36,18 +36,18 @@ handle_cast(_, State) ->
     {stop, error, State}.
 
 handle_info(timeout, State) ->
-    case raft_consensus:expired() of
+    case tansu_consensus:expired() of
         {ok, Expired} ->
             lists:foreach(
               fun
                   ({Category, Key}) ->
-                      raft_consensus:ckv_delete(Category, Key)
+                      tansu_consensus:ckv_delete(Category, Key)
               end,
               Expired),
-            {noreply, State, raft_config:timeout(kv_expiry)};
+            {noreply, State, tansu_config:timeout(kv_expiry)};
 
         {error, not_leader} ->
-            {noreply, State, raft_config:timeout(kv_expiry)}
+            {noreply, State, tansu_config:timeout(kv_expiry)}
     end.
 
 terminate(_, _) ->

@@ -12,13 +12,13 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(raft_mnesia).
+-module(tansu_mnesia).
 -export([create_table/2]).
 
 -spec create_table(Table :: atom(), Options :: list()) -> ok | {error, Reason :: atom()} | {timeout, Tables :: list(atom())}.
 
 create_table(Table, Options) ->
-    Definition = case raft_config:db_schema() of
+    Definition = case tansu_config:db_schema() of
                      ram ->
                          Options;
 
@@ -30,7 +30,7 @@ create_table(Table, Options) ->
             ok;
 
         {aborted, {already_exists, _}} ->
-            case mnesia:wait_for_tables([Table], raft_config:timeout(mnesia_wait_for_tables)) of
+            case mnesia:wait_for_tables([Table], tansu_config:timeout(mnesia_wait_for_tables)) of
                 {timeout, Tables} ->
                     {timeout, Tables};
 
