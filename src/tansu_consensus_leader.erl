@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(tansu_concensus_leader).
+-module(tansu_consensus_leader).
 -export([add_server/2]).
 -export([append_entries/2]).
 -export([append_entries_response/2]).
