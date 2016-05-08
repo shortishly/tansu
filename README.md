@@ -239,7 +239,7 @@ outputting the role of each member:
 ```shell
 for i in {1..5};
 do
-echo tansu-$(printf %03d $i) $(curl -s http://$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $i))/api/info|jq .consensus.role);
+echo tansu-$(printf %03d $i) $(curl -m 1 -s http://$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $i))/api/info|jq .consensus.role);
 done
 ```
 
@@ -253,14 +253,86 @@ tansu-004 "follower"
 tansu-005 "follower"
 ```
 
-Pause the leader:
+Pause the leader (replace `tansu-002` with your leader):
 
 ```shell
 docker pause tansu-002
 ```
 
 Check that one of the other nodes has been established as the leader
-by curling `/api/info` on the remaining nodes. Tansu will create a
-snapshot of its current state every so often, and uses this snapshot
-when members join (or rejoin) the cluster together with any log
-entries subsequent to that snapshot.
+by repeating the curl of `/api/info` on the remaining nodes:
+
+
+```shell
+for i in {1..5};
+do
+echo tansu-$(printf %03d $i) $(curl -m 1 -s http://$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $i))/api/info|jq .consensus.role);
+done
+```
+
+As an example, `tansu-002` is now paused:
+
+```shell
+tansu-001 "leader"
+tansu-002
+tansu-003 "follower"
+tansu-004 "follower"
+tansu-005 "follower"
+```
+
+Fire some updates into one of the remaining nodes (change `tansu-003` to a running node):
+
+```shell
+for i in {0..100};
+do
+    curl \
+        -s \
+        http://$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-003)/api/keys/pqr \
+        -d value=$i;
+done
+```
+
+Tansu will create a snapshot of its current state every so often, and
+uses this snapshot when members join (or rejoin) the cluster together
+with any log entries subsequent to that snapshot.
+
+Unpause the diposed former leader:
+
+```shell
+docker unpause tansu-002
+```
+
+Check that `tansu-002` has rejoined the cluster and is now in the `follower` role:
+
+```shell
+for i in {1..5};
+do
+echo tansu-$(printf %03d $i) $(curl -m 1 -s http://$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $i))/api/info|jq .consensus.role);
+done
+```
+
+The node `tansu-002` is now in the `follower` role:
+
+```shell
+tansu-001 "leader"
+tansu-002 "follower"
+tansu-003 "follower"
+tansu-004 "follower"
+tansu-005 "follower"
+```
+
+Ask the unpaused node for the value of `pqr`:
+
+```shell
+curl -i http://$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-002)/api/keys/pqr
+```
+
+The node will have same value as the remainder of the cluster:
+
+```json
+{"value":"100"}
+```
+
+
+
+
