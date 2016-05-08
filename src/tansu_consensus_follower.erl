@@ -84,7 +84,10 @@ install_snapshot(#{data := {Name, StateMachine, Snapshot},
          Data#{term => tansu_ps:term(Id, T),
                commit_index => LastIndex,
                state_machine => StateMachine,
-               last_applied => LastIndex}))}.
+               last_applied => LastIndex}))};
+install_snapshot(_, Data) ->
+    %% ignore install snapshot from an earlier term
+    {next_state, follower, Data}.
 
 %% Reply false if term < currentTerm (§5.1)
 append_entries(#{term := Term,
@@ -158,7 +161,18 @@ append_entries(#{entries := Entries,
 
 
 append_entries_response(#{term := Term}, #{term := Current} = Data) when Term =< Current ->
-    {next_state, follower, Data}.
+    {next_state, follower, Data};
+
+append_entries_response(#{term := Term}, #{id := Id} = Data) ->
+    %% An append entries response with a future term, drop our current
+    %% vote and adopt the new term.
+    tansu_ps:voted_for(Id, undefined),
+    {next_state,
+     follower,
+     maps:without(
+       [voted_for],
+       tansu_consensus:do_call_election_after_timeout(
+         Data#{term => tansu_ps:term(Id, Term)}))}.
 
 
 log(Command, #{leader := #{id := Leader}} = Data) ->

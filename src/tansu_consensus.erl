@@ -153,6 +153,7 @@ init([]) ->
                          commit_index => tansu_log:commit_index(),
                          last_applied => 0,
                          state_machine => undefined,
+                         time_offset_monitor =>  monitor(time_offset, clock_service),
                          connecting => #{}}))}.
 
 
@@ -206,6 +207,9 @@ handle_event({mdns_advertisement, _}, State, Data) ->
 
 handle_event(_, _, Data) ->
     {stop, error, Data}.
+
+handle_sync_event({ckv_get, _, _}, _, StateName, #{state_machine := undefined} = Data) ->
+    {reply, error, StateName, Data};
 
 handle_sync_event({ckv_get, Category, Key}, _, StateName, #{state_machine := StateMachine} = Data) ->
     {Result, StateMachine} = tansu_sm:ckv_get(Category, Key, StateMachine),
@@ -286,6 +290,30 @@ handle_info({_,
             Name,
             Data) ->
     {next_state, Name, Data};
+
+handle_info({'CHANGE', Monitor, time_offset, clock_service, _} = Change, leader = Role, #{time_offset_monitor := Monitor} = Data) ->
+    error_logger:warning_report([{module, ?MODULE},
+                                 {line, ?LINE},
+                                 {time, Change},
+                                 {role, Role},
+                                 {data, Data}]),
+    {next_state, follower, tansu_consensus_leader:transition_to_follower(Data)};
+
+handle_info({'CHANGE', Monitor, time_offset, clock_service, _} = Change, candidate = Role, #{time_offset_monitor := Monitor} = Data) ->
+    error_logger:warning_report([{module, ?MODULE},
+                                 {line, ?LINE},
+                                 {time, Change},
+                                 {role, Role},
+                                 {data, Data}]),
+    {next_state, follower, tansu_consensus_candidate:transition_to_follower(Data)};
+
+handle_info({'CHANGE', Monitor, time_offset, clock_service, _} = Change, follower = Role, #{time_offset_monitor := Monitor} = Data) ->
+    error_logger:warning_report([{module, ?MODULE},
+                                 {line, ?LINE},
+                                 {time, Change},
+                                 {role, Role},
+                                 {data, Data}]),
+    {next_state, follower, Data};
 
 handle_info({'DOWN', _, process, Pid, _},
             StateName,
