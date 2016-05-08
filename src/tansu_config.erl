@@ -15,15 +15,23 @@
 -module(tansu_config).
 
 -export([acceptors/1]).
+-export([batch_size/1]).
 -export([can/1]).
 -export([db_schema/0]).
+-export([directory/1]).
 -export([enabled/1]).
 -export([endpoint/1]).
 -export([environment/0]).
+-export([maximum/1]).
 -export([minimum/1]).
 -export([port/1]).
 -export([sm/0]).
 -export([timeout/1]).
+
+
+batch_size(append_entries) ->
+    envy(to_integer, batch_size_append_entries, 32).
+    
 
 can(advertise) ->
     envy(to_boolean, can_advertise, true);
@@ -31,6 +39,9 @@ can(discover) ->
     envy(to_boolean, can_discover, true);
 can(mesh) ->
     envy(to_boolean, can_mesh, true).
+
+directory(snapshot) ->
+    envy(to_list, snapshot_directory, "/snapshots").
 
 enabled(debug) ->
     envy(to_boolean, debug, false).
@@ -65,6 +76,8 @@ timeout(leader_high) ->
     envy(to_integer, timeout_leader_high, 1000);
 timeout(kv_expiry) ->
     envy(to_integer, timeout_kv_expiry, 1000);
+timeout(kv_snapshot) ->
+    envy(to_integer, timeout_kv_snapshot, 1000 * 60);
 timeout(mnesia_wait_for_tables) ->
     envy(to_integer_or_atom, timeout_mnesia_wait_for_tables, infinity);
 timeout(sync_send_event) ->
@@ -76,6 +89,9 @@ timeout(stream_ping) ->
 
 minimum(quorum) ->
     envy(to_integer, minimum_quorum, 3).
+
+maximum(snapshot) ->
+    envy(to_integer, maximum_snapshot, 3).
 
 envy(To, Name, Default) ->
     envy:To(tansu, Name, default(Default)).

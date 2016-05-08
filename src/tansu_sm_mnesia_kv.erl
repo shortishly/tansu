@@ -20,7 +20,9 @@
 -export([ckv_test_and_delete/4]).
 -export([ckv_test_and_set/6]).
 -export([expired/1]).
+-export([install_snapshot/3]).
 -export([new/0]).
+-export([snapshot/3]).
 
 -behaviour(tansu_sm).
 
@@ -63,26 +65,31 @@ ckv_test_and_set(Category, Key, ExistingValue, NewValue, TTL, ?MODULE = StateMac
 expired(?MODULE = StateMachine) ->
     {do_expired(), StateMachine}.
 
-    
+snapshot(Name, LastApplied, ?MODULE = StateMachine) ->
+    {do_snapshot(Name, LastApplied), StateMachine}.
+
+install_snapshot(Name, Data, ?MODULE = StateMachine) ->
+    {do_install_snapshot(Name, Data), StateMachine}.
+
 do_get(Category, Key) ->
     activity(
       fun
           () ->
-              case mnesia:read(?MODULE, {Category, Key}) of
-                  [#?MODULE{value = Value}] ->
-                      {ok, Value};
+                    case mnesia:read(?MODULE, {Category, Key}) of
+                        [#?MODULE{value = Value}] ->
+                            {ok, Value};
 
-                  [] ->
-                      {error, not_found}
-              end
-      end).
+                        [] ->
+                            {error, not_found}
+                    end
+            end).
 
 do_delete(Category, Key) ->
     activity(
       fun
           () ->
-              recursive_remove(Category, Key)
-      end).
+                    recursive_remove(Category, Key)
+            end).
 
 recursive_remove(ParentCategory, ParentKey) ->
     Children = qlc:cursor(
@@ -96,7 +103,7 @@ recursive_remove(ParentCategory, ParentKey) ->
             mnesia:delete({?MODULE, {ParentCategory, ParentKey}}),
             tansu_sm:notify(ParentCategory, ParentKey, #{deleted => Value}),
             ok;
-        
+
         [] ->
             ok
     end.
@@ -108,8 +115,8 @@ cursor_remove(Cursor, Answers) ->
     lists:foreach(
       fun
           ({Category, Key}) ->
-              recursive_remove(Category, Key)
-      end,
+                         recursive_remove(Category, Key)
+                 end,
       Answers),
     cursor_remove(Cursor, qlc:next_answers(Cursor)).
 
@@ -120,7 +127,7 @@ cancel_expiry(Category, Key) ->
         _ ->
             nop
     end.
-    
+
 do_set(Category, Key, Value, #{parent := Parent, ttl := TTL}) ->
     activity(
       fun
@@ -213,7 +220,7 @@ do_test_and_set(Category, Key, undefined, NewValue, #{}) ->
               case mnesia:read(?MODULE, {Category, Key}) of
                   [#?MODULE{}] ->
                       error;
-
+                  
                   [] ->
                       mnesia:write(#?MODULE{key = {Category, Key},
                                             value = NewValue}),
@@ -270,15 +277,15 @@ do_test_and_set(Category, Key, ExistingValue, NewValue, #{}) ->
                       mnesia:write(Existing#?MODULE{value = NewValue,
                                                     expiry = undefined}),
                       tansu_sm:notify(Category, Key, #{event => set,
-                                                      old_value => ExistingValue,
-                                                      value => NewValue}),
+                                                       old_value => ExistingValue,
+                                                       value => NewValue}),
                       ok;
 
                   [#?MODULE{value = ExistingValue} = Existing] ->
                       mnesia:write(Existing#?MODULE{value = NewValue}),
                       tansu_sm:notify(Category, Key, #{event => set,
-                                                      old_value => ExistingValue,
-                                                      value => NewValue}),
+                                                       old_value => ExistingValue,
+                                                       value => NewValue}),
                       ok;
 
                   [] ->
@@ -293,7 +300,7 @@ do_test_and_delete(Category, Key, ExistingValue) ->
           () ->
               case mnesia:read(?MODULE, {Category, Key}) of
                   [#?MODULE{value = ExistingValue}] ->
-                          recursive_remove(Category, Key);
+                      recursive_remove(Category, Key);
 
                   [#?MODULE{}] ->
                       error;
@@ -301,7 +308,34 @@ do_test_and_delete(Category, Key, ExistingValue) ->
                       error
               end
       end).
-    
+
+do_snapshot(Name, LastApplied) ->
+    activity(
+      fun
+          () ->
+              case {tansu_log:do_first(), tansu_log:do_last()} of
+                  {#{index := First}, #{index := Last}} when (First < LastApplied) andalso (Last >= LastApplied) ->
+                      #{term := Term} = tansu_log:do_read(LastApplied),
+                      tansu_log:do_delete(First, LastApplied),
+                      tansu_log:do_write(LastApplied, Term, #{m => tansu_sm, f => apply_snapshot, a => [Name]}),
+                      {ok, Checkpoint, _} = mnesia:activate_checkpoint([{min, tables(snapshot)}]),
+                      ok = mnesia:backup_checkpoint(Checkpoint, Name),
+                      ok = mnesia:deactivate_checkpoint(Checkpoint);
+                  
+                  _ ->
+                      ok
+              end
+      end).
+
+do_install_snapshot(Name, Data) ->
+    ok = filelib:ensure_dir(Name),
+    ok = file:write_file(Name, Data),
+    {atomic, _} = mnesia:restore(Name, [{recreate_tables, tables(snapshot)}]),
+    ok.
+
+tables(snapshot) ->
+    [?MODULE, tansu_log, tansu_sm_mnesia_expiry].
+
 
 do_expired() ->
     activity(
@@ -310,7 +344,7 @@ do_expired() ->
               tansu_sm_mnesia_expiry:expired()
       end).
 
-
 activity(F) ->
     mnesia:activity(transaction, F).
+
 
