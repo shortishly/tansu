@@ -97,7 +97,7 @@ curl \
             tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello
 ```
 
-The now contains a `delete` notification:
+The stream now contains a `delete` notification:
 
 ```shell
 id: -576460752303423414
