@@ -13,12 +13,14 @@
 %% limitations under the License.
 
 -module(tansu_consensus_candidate).
+
 -export([add_server/2]).
 -export([append_entries/2]).
 -export([append_entries_response/2]).
 -export([remove_server/2]).
 -export([request_vote/2]).
 -export([rerun_election/1]).
+-export([transition_to_follower/1]).
 -export([vote/2]).
 
 
@@ -181,3 +183,7 @@ maybe_init_log(#{state_machine := undefined} = Data) ->
 maybe_init_log(#{state_machine := _} = Data) ->
     Data.
 
+
+transition_to_follower(Data) ->
+    tansu_consensus:do_call_election_after_timeout(
+      tansu_consensus:do_drop_votes(Data)).

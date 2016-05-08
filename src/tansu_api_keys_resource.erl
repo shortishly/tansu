@@ -33,9 +33,6 @@ init(Req, _) ->
           maps:from_list(cowboy_req:parse_qs(Req)),
           cowboy_req:header(<<"ttl">>, Req)} of
 
-        {_, #{state_machine := undefined}, _, _} ->
-            service_unavailable(Req, #{});
-
         {<<"GET">>, Info, #{<<"stream">> := <<"true">>}, _} ->
             %% An event stream can be established with any member of
             %% the cluster.
@@ -46,9 +43,9 @@ init(Req, _) ->
              cowboy_req:chunked_reply(200, Headers, Req),
              #{info => Info}};
 
-        {<<"GET">>, #{role := follower, leader := _} = Info, _, _} ->
-            %% followers with an established leader can handle simple
-            %% KV GET requests.
+        {<<"GET">>, #{role := follower, leader := _, cluster := _} = Info, _, _} ->
+            %% followers with an established leader and cluster can
+            %% handle simple KV GET requests.
             {cowboy_rest,
              Req,
              #{info => Info,
@@ -56,7 +53,7 @@ init(Req, _) ->
                key => key(Req),
                parent => parent(Req)}};
 
-        {_, #{role := follower, connections := Connections, leader := #{id := Leader}}, _, _} ->
+        {_, #{role := follower, connections := Connections, leader := #{id := Leader}, cluster := _}, _, _} ->
             %% Requests other than GETs should be proxied to the
             %% leader.
             case Connections of
@@ -163,7 +160,7 @@ kv_set(Req, Key, Value, State) ->
         ok ->
             {true, Req, State};
         
-        not_leader ->
+        {error, not_leader} ->
             service_unavailable(Req, State)
     end.
 

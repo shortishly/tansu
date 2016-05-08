@@ -20,6 +20,7 @@
 -export([log/2]).
 -export([remove_server/2]).
 -export([request_vote/2]).
+-export([transition_to_follower/1]).
 -export([vote/2]).
 
 add_server(_, #{change := _, match_indexes := _, next_indexes := _} = Data) ->
@@ -62,6 +63,30 @@ append_entries(#{term := Term,
         Leader, Id, Current, PrevLogIndex, PrevLogTerm, false),
       Leader,
       Data),
+    {next_state, leader, Data};
+
+%% Append entries from another leader in the current term.
+append_entries(#{prev_log_index := PrevLogIndex,
+                 prev_log_term := PrevLogTerm,
+                 leader := Leader} = AppendEntries,
+               #{term := Current,
+                 match_indexes := _,
+                 next_indexes := _,
+                 id := Id} = Data) ->
+    %% Looks like we've found another leader in our term, report as a
+    %% warning.
+    error_logger:warning_report([{module, ?MODULE},
+                                 {line, ?LINE},
+                                 {description, found_another_leader},
+                                 {append_entries, AppendEntries},
+                                 {data, Data}]),
+    %% Refuse to append the entries that we have been given.
+    tansu_consensus:do_send(
+      tansu_rpc:append_entries_response(
+        Leader, Id, Current, PrevLogIndex, PrevLogTerm, false),
+      Leader,
+      Data),
+    %% Remain "the" leader.
     {next_state, leader, Data}.
 
 
@@ -291,3 +316,10 @@ do_apply_to_state_machine([H | T], S0) ->
 
 do_apply_to_state_machine([], State) ->
     State.
+
+
+transition_to_follower(Data) ->
+    maps:without(
+      [match_indexes, next_indexes],
+      tansu_consensus:do_call_election_after_timeout(
+        tansu_consensus:do_drop_votes(Data))).
