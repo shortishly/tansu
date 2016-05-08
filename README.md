@@ -139,3 +139,128 @@ curl \
 One shell is granted the lock, with the remaining shells waiting their
 turn. Drop the lock by hitting `^C` on the holder, the lock is then
 allocated to another waiting shell.
+
+# Leadership Election
+
+Tansu provides cluster information via the `/api/info` resource as
+follows, picking a random node:
+
+```shell
+curl \
+    -s \
+    http://$(docker inspect \
+    --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $i))/api/info|python -m json.tool
+```
+
+Each node may be in `follower` or `candidate` state, with only one
+node in the `leader` role:
+
+```json
+{
+    "applications": {
+        "any": "rolling",
+        "asn1": "4.0.2",
+        "cowboy": "2.0.0-pre.2",
+        "cowlib": "1.3.0",
+        "crown": "0.0.1",
+        "crypto": "3.6.3",
+        "envy": "0.0.1",
+        "gproc": "git",
+        "gun": "1.0.0-pre.1",
+        "inets": "6.2.2",
+        "jsx": "2.8.0",
+        "kernel": "4.2",
+        "mdns": "0.4.1",
+        "mnesia": "4.13.4",
+        "public_key": "1.1.1",
+        "ranch": "1.1.0",
+        "recon": "2.2.1",
+        "rfc4122": "0.0.3",
+        "sasl": "2.7",
+        "shelly": "0.1.0",
+        "ssh": "4.2.2",
+        "ssl": "7.3.1",
+        "stdlib": "2.8",
+        "tansu": "0.13.0"
+    },
+    "consensus": {
+        "cluster": "fadbf747-f700-4d87-b986-73c2a1de18e4",
+        "commit_index": 13668,
+        "connections": {
+            "1c64ca8a-303b-43f7-914f-09e3b680f9ed": {
+                "host": "172.17.0.2",
+                "port": 80
+            },
+            "41fc20ae-70be-4e9d-a40d-a8164b165283": {
+                "host": "172.17.0.7",
+                "port": 80
+            },
+            "6343a50d-acc6-4f62-866d-b5a7dcde5d04": {
+                "host": "172.17.0.5",
+                "port": 80
+            },
+            "e8d25d82-5f07-4598-bb0c-6074793ee111": {
+                "host": "172.17.0.3",
+                "port": 80
+            },
+            "e9057f76-24b5-4f4f-b81c-96d555798ef4": {
+                "host": "172.17.0.4",
+                "port": 80
+            }
+        },
+        "env": "dev",
+        "id": "f327cc37-114f-4237-942b-972199e364a1",
+        "last_applied": 13668,
+        "leader": {
+            "commit_index": 13668,
+            "id": "e8d25d82-5f07-4598-bb0c-6074793ee111"
+        },
+        "role": "follower",
+        "term": 877
+    },
+    "version": {
+        "major": 0,
+        "minor": 13,
+        "patch": 0
+    }
+}
+```
+
+This section optionally uses `jq` to parse some of the JSON output
+from Tansu. To install use:
+
+```shell
+dnf install -y jq
+```
+
+The following script iterates over the members of the Tansu cluster
+outputting the role of each member:
+
+```shell
+for i in {1..5};
+do
+echo tansu-$(printf %03d $i) $(curl -s http://$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $i))/api/info|jq .consensus.role);
+done
+```
+
+As an example:
+
+```shell
+tansu-001 "follower"
+tansu-002 "leader"
+tansu-003 "follower"
+tansu-004 "follower"
+tansu-005 "follower"
+```
+
+Pause the leader:
+
+```shell
+docker pause tansu-002
+```
+
+Check that one of the other nodes has been established as the leader
+by curling `/api/info` on the remaining nodes. Tansu will create a
+snapshot of its current state every so often, and uses this snapshot
+when members join (or rejoin) the cluster together with any log
+entries subsequent to that snapshot.

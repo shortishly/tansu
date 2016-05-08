@@ -33,6 +33,9 @@ init(Req, _) ->
           maps:from_list(cowboy_req:parse_qs(Req)),
           cowboy_req:header(<<"ttl">>, Req)} of
 
+        {_, #{state_machine := undefined}, _, _} ->
+            service_unavailable(Req, #{});
+
         {<<"GET">>, Info, #{<<"stream">> := <<"true">>}, _} ->
             %% An event stream can be established with any member of
             %% the cluster.
@@ -53,7 +56,7 @@ init(Req, _) ->
                key => key(Req),
                parent => parent(Req)}};
 
-        {_, #{role := follower, connections := Connections, leader := Leader}, _, _} ->
+        {_, #{role := follower, connections := Connections, leader := #{id := Leader}}, _, _} ->
             %% Requests other than GETs should be proxied to the
             %% leader.
             case Connections of

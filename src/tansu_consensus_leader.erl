@@ -39,7 +39,7 @@ log(Command, #{match_indexes := _, next_indexes := _} = Data) ->
 %% currentTerm = T, convert to follower (§5.1)
 %% TODO
 append_entries(#{term := Term}, #{id := Id,
-                                 match_indexes := _,
+                                  match_indexes := _,
                                   next_indexes := _,
                                   term := Current} = Data) when Term > Current ->
     {next_state, follower, maps:without(
@@ -118,6 +118,7 @@ end_of_term(#{term := T0,
               id := Id,
               match_indexes := _,
               next_indexes := NI,
+              state_machine := StateMachine,
               last_applied := LA} = D0) ->
     T1 = tansu_ps:increment(Id, T0),
     {next_state, leader,
@@ -127,19 +128,42 @@ end_of_term(#{term := T0,
          next_indexes := maps:fold(
                            fun
                                (Follower, Index, A) when LA >= Index ->
-                                   Entries = [tansu_log:read(I) ||
-                                                 I <-lists:seq(Index, LA)],
-                                   tansu_consensus:do_send(
-                                     tansu_rpc:append_entries(
-                                       T1,
-                                       Id,
-                                       Index-1,
-                                       tansu_log:term_for_index(Index-1),
-                                       CI,
-                                       Entries),
-                                     Follower,
-                                     D0),
-                                   A#{Follower => LA+1};
+                                   case tansu_log:first() of
+                                       #{index := LastIndexInSnapshot, command := #{m := tansu_sm, f := apply_snapshot, a := [Name]}, term := SnapshotTerm} when Index =< LastIndexInSnapshot ->
+                                           
+                                           {ok, Snapshot} = file:read_file(Name),
+
+                                           tansu_consensus:do_send(
+                                             tansu_rpc:install_snapshot(
+                                               T1,
+                                               Id,
+                                               LastIndexInSnapshot,
+                                               SnapshotTerm,
+                                               0,
+                                               0,
+                                               {Name, StateMachine, Snapshot},
+                                               true),
+                                             Follower,
+                                             D0),
+                                           
+                                           A#{Follower => LastIndexInSnapshot+1};
+                                       
+                                       _ ->
+
+                                           Batch = min(tansu_config:batch_size(append_entries), LA - Index),
+                                           Entries = tansu_log:read(Index, Index + Batch),
+                                           tansu_consensus:do_send(
+                                             tansu_rpc:append_entries(
+                                               T1,
+                                               Id,
+                                               Index-1,
+                                               tansu_log:term_for_index(Index-1),
+                                               CI,
+                                               Entries),
+                                             Follower,
+                                             D0),
+                                           A#{Follower => Index + Batch + 1}
+                                   end;
 
                                (Follower, Index, A) ->
                                    tansu_consensus:do_send(
@@ -169,6 +193,10 @@ vote(#{term := Term}, #{id := Id,
                              tansu_consensus:do_call_election_after_timeout(
                                tansu_consensus:do_drop_votes(
                                  Data#{term := tansu_ps:term(Id, Term)})))};
+
+%% Votes from an earlier term are dropped.
+vote(#{term := Term}, #{term := Current} = Data) when Term < Current ->
+    {next_state, leader, Data};
 
 vote(#{term := T, elector := Elector, granted := true},
      #{term := T,
