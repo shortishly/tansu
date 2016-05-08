@@ -39,26 +39,49 @@ done
 
 ## Key Value Store
 
-Assign the value "world" to the key "hello" via a random node of the
-cluster:
+Stream changes to the key "hello" via a random node of the cluster:
 
 ```shell
 curl \
+    -i \
     -s \
-    http://$(
-        docker inspect \
+    http://$(docker inspect \
+            --format={{.NetworkSettings.IPAddress}} \
+            tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello?stream=true
+```
+
+Note that you can create streams from keys that do not currently exist
+in the store. Once a value has been assigned to the key the stream
+will issue change notifications.
+
+In another shell assign the value "world" to the key "hello" via a
+random node of the cluster:
+
+```shell
+curl \
+    -i \
+    -s \
+    http://$(docker inspect \
             --format={{.NetworkSettings.IPAddress}} \
             tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello \
             -d value=world
+```
+
+The stream will now contain a `set` notification:
+
+```shell
+id: -576460752303423422
+event: set
+data: {"category":"user","key":"/hello","value":"world"}
 ```
 
 Obtain the current value of "hello" from a random member of the cluster:
 
 ```shell
 curl \
+    -i \
     -s \
-    http://$(
-        docker inspect \
+    http://$(docker inspect \
             --format={{.NetworkSettings.IPAddress}} \
             tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello
 ```
@@ -67,12 +90,19 @@ Delete the key by asking a random member of the cluster:
 
 ```shell
 curl \
-    -X DELETE \
     -i \
-    http://$(
-        docker inspect \
+    -X DELETE \
+    http://$(docker inspect \
             --format={{.NetworkSettings.IPAddress}} \
             tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello
+```
+
+The now contains a `delete` notification:
+
+```shell
+id: -576460752303423414
+event: deleted
+data: {"category":"user","deleted":"world","key":"/hello"}
 ```
 
 ## Locks
@@ -81,27 +111,27 @@ In several different shells simultaneously request a lock on "abc":
 
 ```shell
 curl \
+    -i \
     -s \
-    http://$(
-        docker inspect \
+    http://$(docker inspect \
             --format={{.NetworkSettings.IPAddress}} \
             tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/locks/abc
 ```
 
 ```shell
 curl \
+    -i \
     -s \
-    http://$(
-        docker inspect \
+    http://$(docker inspect \
             --format={{.NetworkSettings.IPAddress}} \
             tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/locks/abc
 ```
 
 ```shell
 curl \
+    -i \
     -s \
-    http://$(
-        docker inspect \
+    http://$(docker inspect \
             --format={{.NetworkSettings.IPAddress}} \
             tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/locks/abc
 ```

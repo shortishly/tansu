@@ -38,7 +38,7 @@ init(Req, _) ->
             %% the cluster.
 	    Headers = [{<<"content-type">>, <<"text/event-stream">>},
 		       {<<"cache-control">>, <<"no-cache">>}],
-            tansu_api:kv_subscribe(cowboy_req:path_info(Req)),
+            tansu_api:kv_subscribe(key(Req)),
 	    {cowboy_loop,
              cowboy_req:chunked_reply(200, Headers, Req),
              #{info => Info}};
