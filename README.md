@@ -7,8 +7,8 @@ Tansu is a distributed key value store designed to maintain
 configuration and other data that must be highly available. It uses
 the [Raft Consensus algorithm](https://raft.github.io) for leadership
 election and distribution of state amongst its members. Node discovery
-is via [mDNS](https://github.com/shortishly/mdns) and automatically
-forms a mesh of nodes sharing the same environment.
+is via [mDNS](https://github.com/shortishly/mdns) and will
+automatically form a mesh of nodes sharing the same environment.
 
 ## Key Value Store
 
@@ -39,7 +39,7 @@ done
 
 ## Key Value Store
 
-Stream changes to the key "hello" via a random node of the cluster:
+Using a random node in the cluster stream changes to the key "hello":
 
 ```shell
 curl \
@@ -54,8 +54,8 @@ Note that you can create streams from keys that do not currently exist
 in the store. Once a value has been assigned to the key the stream
 will issue change notifications.
 
-In another shell assign the value "world" to the key "hello" via a
-random node of the cluster:
+In another shell assign the value "world" to the key "hello" using a
+random member of the cluster:
 
 ```shell
 curl \
@@ -75,7 +75,7 @@ event: set
 data: {"category":"user","key":"/hello","value":"world"}
 ```
 
-Obtain the current value of "hello" from a random member of the cluster:
+Ask a random member of the cluster for the current value of "hello":
 
 ```shell
 curl \
@@ -86,7 +86,7 @@ curl \
             tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello
 ```
 
-Delete the key by asking a random member of the cluster:
+Ask a random member of the cluster to delete the key "hello":
 
 ```shell
 curl \
@@ -106,6 +106,13 @@ data: {"category":"user","deleted":"world","key":"/hello"}
 ```
 
 ## Locks
+
+Locks are obtained by issuing a HTTP GET on `/api/locks/` followed by
+the name of the lock. The response is a Server Sent Event stream that
+will indicate the status the lock to the caller. The lock holder will
+retain the lock until the connection is dropped (either by the client
+or sever). The free lock is then automatically granted to a waiting
+connection.
 
 In several different shells simultaneously request a lock on "abc":
 
