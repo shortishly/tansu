@@ -13,9 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-PROJECT = raft
-PROJECT_DESCRIPTION = Raft Consensus
-PROJECT_VERSION = 0.9.0
+PROJECT = tansu
+PROJECT_DESCRIPTION = Tansu
+PROJECT_VERSION = 0.13.0
 
 DEPS = \
 	cowboy \

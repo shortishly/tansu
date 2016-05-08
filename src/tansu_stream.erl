@@ -1,5 +1,4 @@
-%% -*- mode: erlang -*-
-%% Copyright (c) 2012-2015 Peter Morgan <peter.james.morgan@gmail.com>
+%% Copyright (c) 2016 Peter Morgan <peter.james.morgan@gmail.com>
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -13,6 +12,28 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
-[
- {tansu, [{db_schema, disc}]}
-].
+
+-module(tansu_stream).
+
+-export([chunk/3]).
+-export([chunk/4]).
+
+
+chunk(Id, Event, Req) ->
+    cowboy_req:chunk(
+      ["id: ",
+       any:to_list(Id),
+       "\nevent: ",
+       any:to_list(Event),
+       "\n\n"],
+      Req).
+
+chunk(Id, Event, Data, Req) ->
+    cowboy_req:chunk(
+      ["id: ",
+       any:to_list(Id),
+       "\nevent: ",
+       any:to_list(Event),
+       "\ndata: ",
+       jsx:encode(Data), "\n\n"],
+      Req).
