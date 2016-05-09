@@ -625,7 +625,7 @@ do_info(State, Data) ->
 
           (state_machine, StateMachine, A) ->
                      case tansu_sm:ckv_get(system, [<<"cluster">>], StateMachine) of
-                         {{ok, Id}, _} ->
+                         {{ok, Id, _}, _} ->
                              A#{cluster => Id};
                          _ ->
                              A

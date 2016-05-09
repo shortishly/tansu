@@ -73,10 +73,30 @@ curl \
 
 The stream will now contain a `set` notification:
 
-```shell
-id: -576460752303423422
+```json
+id: -576460752303423294
 event: set
-data: {"category":"user","key":"/hello","value":"world"}
+data: {"category":"user","key":"/hello","metadata":{"content_type":"application/x-www-form-urlencoded"},"value":"value=world"}
+```
+
+Or with a content type:
+
+```shell
+curl \
+    -H "Content-Type: application/json" \
+    -i \
+    http://$(docker inspect \
+        --format={{.NetworkSettings.IPAddress}} \
+        tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello \
+    --data-binary '{"stuff": true}'
+```
+
+With an update in the stream:
+
+```json
+id: -576460752303423286
+event: set
+data: {"category":"user","key":"/hello","metadata":{"content_type":"application/json"},"value":{"stuff":true}}
 ```
 
 #### Get
@@ -120,32 +140,31 @@ A value can also be given a time to live by also supplying a TTL header:
 
 ```shell
 curl \
-    -i \
-    -s \
+    -H "Content-Type: application/json" \
     -H "ttl: 10" \
+    -i \
     http://$(docker inspect \
-            --format={{.NetworkSettings.IPAddress}} \
-            tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello \
-            -d value=ephemeral
+        --format={{.NetworkSettings.IPAddress}} \
+        tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello \
+    --data-binary '{"ephemeral": true}'
 ```
 
 The event stream will contain details of the `set` together with a TTL
 attribute:
 
 ```
-id: -576460752303421879
+id: -576460752303423262
 event: set
-data: {"category":"user","key":"/hello","ttl":10,"value":"ephemeral"}
+data: {"category":"user","key":"/hello","metadata":{"content_type":"application/json"},"ttl":10,"value":{"ephemeral":true}}
 ```
 
-Ten seconds later the key is removed:
+Ten seconds later when the key is removed:
 
 ```
-id: -576460752303421871
+id: -576460752303423238
 event: deleted
-data: {"category":"user","deleted":"ephemeral","key":"/hello"}
+data: {"category":"user","deleted":"{\"ephemeral\": true}","key":"/hello"}
 ```
-
 
 
 ### Locks
