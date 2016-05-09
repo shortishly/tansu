@@ -28,7 +28,7 @@
 
 -include_lib("stdlib/include/qlc.hrl").
 
--record(?MODULE, {key, parent, expiry, value}).
+-record(?MODULE, {key, parent, metadata = #{}, expiry, value}).
 
 
 new() ->
@@ -76,8 +76,8 @@ do_get(Category, Key) ->
       fun
           () ->
                     case mnesia:read(?MODULE, {Category, Key}) of
-                        [#?MODULE{value = Value}] ->
-                            {ok, Value};
+                        [#?MODULE{value = Value, metadata = Metadata}] ->
+                            {ok, Value, Metadata};
 
                         [] ->
                             {error, not_found}
@@ -88,8 +88,8 @@ do_delete(Category, Key) ->
     activity(
       fun
           () ->
-                    recursive_remove(Category, Key)
-            end).
+              recursive_remove(Category, Key)
+      end).
 
 recursive_remove(ParentCategory, ParentKey) ->
     Children = qlc:cursor(
@@ -128,51 +128,59 @@ cancel_expiry(Category, Key) ->
             nop
     end.
 
-do_set(Category, Key, Value, #{parent := Parent, ttl := TTL}) ->
+do_set(Category, Key, Value, #{parent := Parent, ttl := TTL} = Options) ->
     activity(
       fun
           () ->
               cancel_expiry(Category, Key),
               Expiry = calendar:datetime_to_gregorian_seconds(erlang:universaltime()) + TTL,
+              Metadata = maps:without([parent, ttl], Options),
               mnesia:write(#?MODULE{key = {Category, Key},
                                     value = Value,
+                                    metadata = Metadata,
                                     expiry = Expiry,
                                     parent = {Category, Parent}}),
               tansu_sm_mnesia_expiry:set(Category, Key, Expiry),
               tansu_sm:notify(Category, Key, #{event => set,
-                                              ttl => TTL,
-                                              value => Value}),
+                                               ttl => TTL,
+                                               metadata => Metadata,
+                                               value => Value}),
               ok
       end);
 
-do_set(Category, Key, Value, #{parent := Parent}) ->
+do_set(Category, Key, Value, #{parent := Parent} = Options) ->
     activity(
       fun
           () ->
               cancel_expiry(Category, Key),
+              Metadata = maps:without([parent], Options),
               mnesia:write(#?MODULE{key = {Category, Key},
                                     value = Value,
+                                    metadata = Metadata,
                                     parent = {Category, Parent}}),
               tansu_sm:notify(Category, Key, #{event => set,
-                                              value => Value}),
+                                               metadata => Metadata,
+                                               value => Value}),
               ok
       end);
 
-do_set(Category, Key, Value, #{}) ->
+do_set(Category, Key, Value, Metadata) ->
     activity(
       fun
           () ->
               cancel_expiry(Category, Key),
               mnesia:write(#?MODULE{key = {Category, Key},
+                                    metadata = Metadata,
                                     value = Value}),
               tansu_sm:notify(Category, Key, #{event => set,
-                                              value => Value}),
+                                               metadata => Metadata,
+                                               value => Value}),
               ok
       end).
 
 
 
-do_test_and_set(Category, Key, undefined, NewValue, #{parent := Parent, ttl := TTL}) ->
+do_test_and_set(Category, Key, undefined, NewValue, #{parent := Parent, ttl := TTL} = Options) ->
     activity(
       fun
           () ->
@@ -182,20 +190,23 @@ do_test_and_set(Category, Key, undefined, NewValue, #{parent := Parent, ttl := T
 
                   [] ->
                       Expiry = calendar:datetime_to_gregorian_seconds(erlang:universaltime()) + TTL,
+                      Metadata = maps:without([parent, ttl], Options),
                       mnesia:write(#?MODULE{key = {Category, Key},
                                             value = NewValue,
+                                            metadata = Metadata,
                                             expiry = Expiry,
                                             parent = {Category, Parent}}),
                       tansu_sm_mnesia_expiry:set(Category, Key, Expiry),
                       tansu_sm:notify(Category, Key, #{event => set,
-                                                      ttl => TTL,
-                                                      value => NewValue}),
+                                                       ttl => TTL,
+                                                       metadata => Metadata,
+                                                       value => NewValue}),
                       ok
               end
       end);
 
 
-do_test_and_set(Category, Key, undefined, NewValue, #{parent := Parent}) ->
+do_test_and_set(Category, Key, undefined, NewValue, #{parent := Parent} = Options) ->
     activity(
       fun
           () ->
@@ -204,16 +215,19 @@ do_test_and_set(Category, Key, undefined, NewValue, #{parent := Parent}) ->
                       error;
 
                   [] ->
+                      Metadata = maps:without([parent], Options),
                       mnesia:write(#?MODULE{key = {Category, Key},
                                             value = NewValue,
+                                            metadata = Metadata,
                                             parent = {Category, Parent}}),
                       tansu_sm:notify(Category, Key, #{event => set,
-                                                      value => NewValue}),
+                                                       metadata => Metadata,
+                                                       value => NewValue}),
                       ok
               end
       end);
 
-do_test_and_set(Category, Key, undefined, NewValue, #{}) ->
+do_test_and_set(Category, Key, undefined, NewValue, Metadata) ->
     activity(
       fun
           () ->
@@ -223,9 +237,11 @@ do_test_and_set(Category, Key, undefined, NewValue, #{}) ->
                   
                   [] ->
                       mnesia:write(#?MODULE{key = {Category, Key},
+                                            metadata = Metadata,
                                             value = NewValue}),
                       tansu_sm:notify(Category, Key, #{event => set,
-                                                      value => NewValue}),
+                                                       metadata => Metadata,
+                                                       value => NewValue}),
                       ok
               end
       end);
