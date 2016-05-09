@@ -99,9 +99,9 @@ recursive_remove(ParentCategory, ParentKey) ->
     cursor_remove(Children, qlc:next_answers(Children)),
     cancel_expiry(ParentCategory, ParentKey),
     case mnesia:read(?MODULE, {ParentCategory, ParentKey}) of
-        [#?MODULE{value = Value}] ->
+        [#?MODULE{value = Value, metadata = Metadata}] ->
             mnesia:delete({?MODULE, {ParentCategory, ParentKey}}),
-            tansu_sm:notify(ParentCategory, ParentKey, #{deleted => Value}),
+            tansu_sm:notify(ParentCategory, ParentKey, #{event => deleted, value => Value, metadata => Metadata}),
             ok;
 
         [] ->
@@ -247,7 +247,7 @@ do_test_and_set(Category, Key, undefined, NewValue, Metadata) ->
       end);
 
 
-do_test_and_set(Category, Key, ExistingValue, NewValue, #{ttl := TTL}) ->
+do_test_and_set(Category, Key, ExistingValue, NewValue, #{ttl := TTL} = Options) ->
     activity(
       fun
           () ->
@@ -257,21 +257,28 @@ do_test_and_set(Category, Key, ExistingValue, NewValue, #{ttl := TTL}) ->
                   [#?MODULE{value = ExistingValue,
                             expiry = Previous} = Existing] when is_integer(Previous) ->
                       cancel_expiry(Category, Key),
+                      Metadata = maps:without([ttl], Options),
                       mnesia:write(Existing#?MODULE{value = NewValue,
+                                                    metadata = Metadata,
                                                     expiry = Expiry}),
                       tansu_sm_mnesia_expiry:set(Category, Key, Expiry),
                       tansu_sm:notify(Category, Key, #{event => set,
-                                                      ttl => TTL,
-                                                      old_value => ExistingValue,
-                                                      value => NewValue}),
+                                                       ttl => TTL,
+                                                       metadata => Metadata,
+                                                       old_value => ExistingValue,
+                                                       value => NewValue}),
                       ok;
 
 
                   [#?MODULE{value = ExistingValue} = Existing] ->
-                      mnesia:write(Existing#?MODULE{value = NewValue, expiry = Expiry}),
+                      Metadata = maps:without([ttl], Options),
+                      mnesia:write(Existing#?MODULE{value = NewValue,
+                                                    expiry = Expiry,
+                                                    metadata = Metadata}),
                       tansu_sm_mnesia_expiry:set(Category, Key, Expiry),
                       tansu_sm:notify(Category, Key, #{event => set,
                                                       ttl => TTL,
+                                                       metadata => Metadata,
                                                       old_value => ExistingValue,
                                                       value => NewValue}),
                       ok;
@@ -282,7 +289,7 @@ do_test_and_set(Category, Key, ExistingValue, NewValue, #{ttl := TTL}) ->
               end
       end);
 
-do_test_and_set(Category, Key, ExistingValue, NewValue, #{}) ->
+do_test_and_set(Category, Key, ExistingValue, NewValue, Metadata) ->
     activity(
       fun
           () ->
@@ -291,15 +298,19 @@ do_test_and_set(Category, Key, ExistingValue, NewValue, #{}) ->
                             expiry = Previous} = Existing] when is_integer(Previous) ->
                       cancel_expiry(Category, Key),
                       mnesia:write(Existing#?MODULE{value = NewValue,
+                                                    metadata = Metadata,
                                                     expiry = undefined}),
                       tansu_sm:notify(Category, Key, #{event => set,
+                                                       metadata => Metadata,
                                                        old_value => ExistingValue,
                                                        value => NewValue}),
                       ok;
 
                   [#?MODULE{value = ExistingValue} = Existing] ->
-                      mnesia:write(Existing#?MODULE{value = NewValue}),
+                      mnesia:write(Existing#?MODULE{value = NewValue,
+                                                    metadata = Metadata}),
                       tansu_sm:notify(Category, Key, #{event => set,
+                                                       metadata => Metadata,
                                                        old_value => ExistingValue,
                                                        value => NewValue}),
                       ok;

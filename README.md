@@ -127,10 +127,10 @@ curl \
 
 The stream now contains a `delete` notification:
 
-```shell
-id: -576460752303423414
+```json
+id: -576460752303423335
 event: deleted
-data: {"category":"user","deleted":"world","key":"/hello"}
+data: {"category":"user","key":"/hello","metadata":{"content_type":"application/json"},"value":{"stuff":true}}
 ```
 
 #### TTL
@@ -152,7 +152,7 @@ curl \
 The event stream will contain details of the `set` together with a TTL
 attribute:
 
-```
+```json
 id: -576460752303423262
 event: set
 data: {"category":"user","key":"/hello","metadata":{"content_type":"application/json"},"ttl":10,"value":{"ephemeral":true}}
@@ -160,7 +160,7 @@ data: {"category":"user","key":"/hello","metadata":{"content_type":"application/
 
 Ten seconds later when the key is removed:
 
-```
+```json
 id: -576460752303423238
 event: deleted
 data: {"category":"user","deleted":"{\"ephemeral\": true}","key":"/hello"}
