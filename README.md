@@ -56,6 +56,8 @@ Note that you can create streams from keys that do not currently exist
 in the store. Once a value has been assigned to the key the stream
 will issue change notifications.
 
+#### Set
+
 In another shell assign the value "world" to the key "hello" using a
 random member of the cluster:
 
@@ -77,6 +79,8 @@ event: set
 data: {"category":"user","key":"/hello","value":"world"}
 ```
 
+#### Get
+
 Ask a random member of the cluster for the current value of "hello":
 
 ```shell
@@ -87,6 +91,8 @@ curl \
             --format={{.NetworkSettings.IPAddress}} \
             tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello
 ```
+
+#### Delete
 
 Ask a random member of the cluster to delete the key "hello":
 
@@ -106,6 +112,41 @@ id: -576460752303423414
 event: deleted
 data: {"category":"user","deleted":"world","key":"/hello"}
 ```
+
+#### TTL
+
+A value can also be given a time to live by also supplying a TTL header:
+
+
+```shell
+curl \
+    -i \
+    -s \
+    -H "ttl: 10" \
+    http://$(docker inspect \
+            --format={{.NetworkSettings.IPAddress}} \
+            tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello \
+            -d value=ephemeral
+```
+
+The event stream will contain details of the `set` together with a TTL
+attribute:
+
+```
+id: -576460752303421879
+event: set
+data: {"category":"user","key":"/hello","ttl":10,"value":"ephemeral"}
+```
+
+Ten seconds later the key is removed:
+
+```
+id: -576460752303421871
+event: deleted
+data: {"category":"user","deleted":"ephemeral","key":"/hello"}
+```
+
+
 
 ### Locks
 
