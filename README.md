@@ -10,14 +10,16 @@ election and distribution of state amongst its members. Node discovery
 is via [mDNS](https://github.com/shortishly/mdns) and will
 automatically form a mesh of nodes sharing the same environment.
 
-## Key Value Store
+## Features
+
+### Key Value Store
 
 Tansu has a REST interface to set, get or delete the value represented
 by a key. It also provides a HTTP
 [Server Sent Event Stream](https://en.wikipedia.org/wiki/Server-sent_events)
 of changes to the store.
 
-## Locks
+### Locks
 
 Tansu provides test and set operations that can be used to operate
 locks through a simple REST based HTTP
@@ -25,7 +27,7 @@ locks through a simple REST based HTTP
 interface.
 
 
-# Quick Start
+## Quick Start
 
 To start a 5 node Tansu cluster using Docker:
 
@@ -37,7 +39,7 @@ for i in {1..5}; do
 done
 ```
 
-## Key Value Store
+### Key Value Store
 
 Using a random node in the cluster stream changes to the key "hello":
 
@@ -105,7 +107,7 @@ event: deleted
 data: {"category":"user","deleted":"world","key":"/hello"}
 ```
 
-## Locks
+### Locks
 
 Locks are obtained by issuing a HTTP GET on `/api/locks/` followed by
 the name of the lock. The response is a Server Sent Event stream that
@@ -147,7 +149,7 @@ One shell is granted the lock, with the remaining shells waiting their
 turn. Drop the lock by hitting `^C` on the holder, the lock is then
 allocated to another waiting shell.
 
-# Leadership Election
+## Leadership Election
 
 Tansu provides cluster information via the `/api/info` resource as
 follows, picking a random node:
@@ -156,7 +158,7 @@ follows, picking a random node:
 curl \
     -s \
     http://$(docker inspect \
-    --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $i))/api/info|python -m json.tool
+    --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/info|python -m json.tool
 ```
 
 Each node may be in `follower` or `candidate` state, with only one
