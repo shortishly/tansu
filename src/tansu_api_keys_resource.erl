@@ -66,26 +66,47 @@ init(Req, _) ->
 
         {_, #{role := leader} = Info, _, undefined} ->
             %% The leader can deal directly with any request.
-            {Type, Subtype, _} = cowboy_req:parse_header(<<"content-type">>, Req),
-            {cowboy_rest,
-             Req,
-             #{info => Info,
-               content_type => <<Type/bytes, "/", Subtype/bytes>>,
-               path => cowboy_req:path(Req),
-               key => key(Req),
-               parent => parent(Req)}};
+            case cowboy_req:parse_header(<<"content-type">>, Req) of
+                undefined ->
+                    {cowboy_rest,
+                     Req,
+                     #{info => Info,
+                       path => cowboy_req:path(Req),
+                       key => key(Req),
+                       parent => parent(Req)}};
+
+                {Type, Subtype, _} ->
+                    {cowboy_rest,
+                     Req,
+                     #{info => Info,
+                       content_type => <<Type/bytes, "/", Subtype/bytes>>,
+                       path => cowboy_req:path(Req),
+                       key => key(Req),
+                       parent => parent(Req)}}
+            end;
 
         {_, #{role := leader} = Info, _, TTL} ->
             %% The leader can deal directly with any request.
-            {Type, Subtype, _} = cowboy_req:parse_header(<<"content-type">>, Req),
-            {cowboy_rest,
-             Req,
-             #{info => Info,
-               content_type => <<Type/bytes, "/", Subtype/bytes>>,
-               path => cowboy_req:path(Req),
-               ttl => binary_to_integer(TTL),
-               key => key(Req),
-               parent => parent(Req)}};
+            case cowboy_req:parse_header(<<"content-type">>, Req) of
+                undefined ->
+                    {cowboy_rest,
+                     Req,
+                     #{info => Info,
+                       path => cowboy_req:path(Req),
+                       ttl => binary_to_integer(TTL),
+                       key => key(Req),
+                       parent => parent(Req)}};
+
+                {Type, Subtype, _} ->
+                    {cowboy_rest,
+                     Req,
+                     #{info => Info,
+                       content_type => <<Type/bytes, "/", Subtype/bytes>>,
+                       path => cowboy_req:path(Req),
+                       ttl => binary_to_integer(TTL),
+                       key => key(Req),
+                       parent => parent(Req)}}
+            end;
 
         {_, _, _, _} ->
             %% Neither a leader nor a follower with an established
