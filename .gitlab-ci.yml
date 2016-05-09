@@ -6,16 +6,17 @@ before_script:
 stages:
   - build
 
-app:
+master:
   stage: build
   script:
     - make
-    - docker login -e $DOCKER_EMAIL -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
+    - docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
     - docker tag $(bin/release_name):$(bin/version) $DOCKER_USERNAME/$(bin/app):$(bin/version)
     - docker tag $(bin/release_name):$(bin/version) $DOCKER_USERNAME/$(bin/app):latest
     - docker push $DOCKER_USERNAME/$(bin/app):$(bin/version)
     - docker push $DOCKER_USERNAME/$(bin/app):latest
     - docker rmi $DOCKER_USERNAME/$(bin/app):$(bin/version)
     - docker rmi $DOCKER_USERNAME/$(bin/app):latest
+    - docker rmi $(bin/release_name):$(bin/version)
   only:
     - master

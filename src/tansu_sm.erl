@@ -41,7 +41,7 @@
 
 -callback ckv_get(Category :: atom(),
                   Key :: binary(),
-                  StateMachine :: state_machine()) -> {{ok, Value :: any()} |
+                  StateMachine :: state_machine()) -> {{ok, Value :: any(), Metadata :: map()} |
                                                        {error, Reason :: string()} |
                                                        {error, Reason :: atom()},
                                                        StateMachine :: state_machine()}.
@@ -56,7 +56,7 @@
 -callback ckv_set(Category :: atom(),
                   Key :: binary(),
                   Value :: any(),
-                  Options :: map(),
+                  Metadata :: map(),
                   StateMachine :: state_machine()) -> {ok |
                                                        {error, Reason :: string()} |
                                                        {error, Reason :: atom()},
@@ -89,8 +89,8 @@ ckv_get(Category, Key, StateMachine) ->
 ckv_delete(Category, Key, StateMachine) ->
     (tansu_config:sm()):ckv_delete(Category, Key, StateMachine).
 
-ckv_set(Category, Key, Value, Options, StateMachine) ->
-    (tansu_config:sm()):ckv_set(Category, Key, Value, Options, StateMachine).
+ckv_set(Category, Key, Value, Metadata, StateMachine) ->
+    (tansu_config:sm()):ckv_set(Category, Key, Value, Metadata, StateMachine).
 
 ckv_test_and_delete(Category, Key, ExistingValue, StateMachine) ->
     (tansu_config:sm()):ckv_test_and_delete(Category, Key, ExistingValue, StateMachine).

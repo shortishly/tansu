@@ -19,13 +19,12 @@
 -export([content_types_accepted/2]).
 -export([content_types_provided/2]).
 -export([delete_resource/2]).
--export([from_form_urlencoded/2]).
--export([from_json/2]).
+-export([from_identity/2]).
 -export([info/3]).
 -export([init/2]).
 -export([resource_exists/2]).
 -export([terminate/3]).
--export([to_json/2]).
+-export([to_identity/2]).
 
 init(Req, _) ->
     case {cowboy_req:method(Req),
@@ -67,18 +66,22 @@ init(Req, _) ->
 
         {_, #{role := leader} = Info, _, undefined} ->
             %% The leader can deal directly with any request.
+            {Type, Subtype, _} = cowboy_req:parse_header(<<"content-type">>, Req),
             {cowboy_rest,
              Req,
              #{info => Info,
+               content_type => <<Type/bytes, "/", Subtype/bytes>>,
                path => cowboy_req:path(Req),
                key => key(Req),
                parent => parent(Req)}};
 
         {_, #{role := leader} = Info, _, TTL} ->
             %% The leader can deal directly with any request.
+            {Type, Subtype, _} = cowboy_req:parse_header(<<"content-type">>, Req),
             {cowboy_rest,
              Req,
              #{info => Info,
+               content_type => <<Type/bytes, "/", Subtype/bytes>>,
                path => cowboy_req:path(Req),
                ttl => binary_to_integer(TTL),
                key => key(Req),
@@ -98,15 +101,20 @@ allowed_methods(Req, State) ->
       <<"POST">>,
       <<"PUT">>], Req, State}.
 
-content_types_accepted(Req, State) ->
-    {[{{<<"application">>, <<"x-www-form-urlencoded">>, []}, from_form_urlencoded},
-      {{<<"application">>, <<"json">>, []}, from_json}], Req, State}.
+content_types_accepted(Req, #{content_type := ContentType} = State) ->
+    {[{ContentType, from_identity}], Req, State}.
 
-content_types_provided(Req, State) ->
-    {[{{<<"application">>, <<"json">>, '*'}, to_json}], Req, State}.
+content_types_provided(Req, #{key := Key} = State) ->
+    case tansu_api:kv_get(Key) of
+        {ok, Value, #{content_type := ContentType} = Metadata} ->
+            {[{ContentType, to_identity}], Req, State#{value => #{data => Value, metadata => Metadata}}};
+        
+        {error, _} = Error ->
+            {[{{<<"text">>, <<"plain">>, []}, dummy_to_text_plain}], Req, State#{value => Error}}
+    end.
 
-to_json(Req, #{value := Value} = State) ->
-    {jsx:encode(#{value => Value}), Req, State}.
+to_identity(Req, #{value := #{data := Data}} = State) ->
+    {Data, Req, State}.
 
 key(Req) ->
     slash_separated(cowboy_req:path_info(Req)).
@@ -127,36 +135,21 @@ slash_separated(PathInfo) ->
       <<>>,
       PathInfo).
 
-from_json(Req, State) ->
-    from_json(cowboy_req:body(Req), <<>>, State).
+from_identity(Req, State) ->
+    from_identity(cowboy_req:body(Req), <<>>, State).
 
-from_json({ok, Final, Req}, Partial, #{key := Key} = State) ->
+from_identity({ok, Final, Req}, Partial, #{key := Key} = State) ->
     kv_set(
       Req,
       Key,
-      jsx:decode(<<Partial/binary, Final/binary>>),
+      <<Partial/binary, Final/binary>>,
       State);
 
-from_json({more, Part, Req}, Partial, State) ->
-    from_json(cowboy_req:body(Req), <<Partial/binary, Part/binary>>, State).
-
-from_form_urlencoded(Req0, State) ->
-    case cowboy_req:body_qs(Req0) of
-        {ok, KVS, Req1} ->
-            from_form_url_encoded(Req1, maps:from_list(KVS), State);
-
-        _ ->
-            bad_request(Req0, State)
-    end.
-
-from_form_url_encoded(Req, #{<<"value">> := Value}, #{key := Key} = State) ->
-    kv_set(Req, Key, Value, State);
-
-from_form_url_encoded(Req, _, State) ->
-    bad_request(Req, State).
+from_identity({more, Part, Req}, Partial, State) ->
+    from_identity(cowboy_req:body(Req), <<Partial/binary, Part/binary>>, State).
 
 kv_set(Req, Key, Value, State) ->
-    case tansu_api:kv_set(Key, Value, maps:with([parent, ttl], State)) of
+    case tansu_api:kv_set(Key, Value, maps:with([content_type, parent, ttl], State)) of
         ok ->
             {true, Req, State};
         
@@ -167,24 +160,31 @@ kv_set(Req, Key, Value, State) ->
 delete_resource(Req, #{key := Key} = State) ->
     {tansu_api:kv_delete(Key) == ok, Req, State}.
 
-resource_exists(Req, #{key := Key} = State) ->
-    case cowboy_req:method(Req) of
-        <<"GET">> ->
-            case tansu_api:kv_get(Key) of
-                {ok, Value} ->
-                    {true, Req, State#{value => Value}};
+resource_exists(Req, State) ->
+    resource_exists(Req, cowboy_req:method(Req), State).
 
-                {error, not_found} ->
-                    {false, Req, State};
+resource_exists(Req, <<"GET">>, #{value := #{data := _, metadata := _}} = State) ->
+    {true, Req, State};
+resource_exists(Req, <<"GET">>, #{value := {error, not_found}} = State) ->
+    {false, Req, State};
+resource_exists(Req, <<"GET">>, #{value := {error, not_leader}} = State) ->
+    %% whoa, we were the leader, but we're not now
+    service_unavailable(Req, State);
+resource_exists(Req, _, State) ->
+    {true, Req, State}.
 
-                {error, not_leader} ->
-                    %% whoa, we were the leader, but we're not now
-                    service_unavailable(Req, State)
-            end;
-        _ ->
-            {true, Req, State}
-    end.
 
+info(#{id := Id, event := Event, data := #{metadata := #{content_type := <<"application/json">>}, value := Value} = Data, module := tansu_sm}, Req, State) ->
+    {cowboy_req:chunk(
+       ["id: ",
+        any:to_list(Id),
+        "\nevent: ",
+        any:to_list(Event),
+        "\ndata: ",
+        jsx:encode(Data#{value := jsx:decode(Value)}), "\n\n"],
+       Req),
+     Req,
+     State};
 
 info(#{id := Id, event := Event, data := Data, module := tansu_sm}, Req, State) ->
     {cowboy_req:chunk(
@@ -208,9 +208,6 @@ terminate(Reason, Req, #{proxy := Proxy} = State) ->
 terminate(_Reason, _Req, _) ->
     %% nothing to clean up here.
     tansu_sm:goodbye().
-                
-bad_request(Req, State) ->                        
-    stop_with_code(400, Req, State).
                 
 service_unavailable(Req, State) ->
     stop_with_code(503, Req, State).

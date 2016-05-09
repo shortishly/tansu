@@ -10,14 +10,16 @@ election and distribution of state amongst its members. Node discovery
 is via [mDNS](https://github.com/shortishly/mdns) and will
 automatically form a mesh of nodes sharing the same environment.
 
-## Key Value Store
+## Features
+
+### Key Value Store
 
 Tansu has a REST interface to set, get or delete the value represented
 by a key. It also provides a HTTP
 [Server Sent Event Stream](https://en.wikipedia.org/wiki/Server-sent_events)
 of changes to the store.
 
-## Locks
+### Locks
 
 Tansu provides test and set operations that can be used to operate
 locks through a simple REST based HTTP
@@ -25,7 +27,7 @@ locks through a simple REST based HTTP
 interface.
 
 
-# Quick Start
+## Quick Start
 
 To start a 5 node Tansu cluster using Docker:
 
@@ -37,7 +39,7 @@ for i in {1..5}; do
 done
 ```
 
-## Key Value Store
+### Key Value Store
 
 Using a random node in the cluster stream changes to the key "hello":
 
@@ -54,6 +56,8 @@ Note that you can create streams from keys that do not currently exist
 in the store. Once a value has been assigned to the key the stream
 will issue change notifications.
 
+#### Set
+
 In another shell assign the value "world" to the key "hello" using a
 random member of the cluster:
 
@@ -69,11 +73,33 @@ curl \
 
 The stream will now contain a `set` notification:
 
-```shell
-id: -576460752303423422
+```json
+id: -576460752303423294
 event: set
-data: {"category":"user","key":"/hello","value":"world"}
+data: {"category":"user","key":"/hello","metadata":{"content_type":"application/x-www-form-urlencoded"},"value":"value=world"}
 ```
+
+Or with a content type:
+
+```shell
+curl \
+    -H "Content-Type: application/json" \
+    -i \
+    http://$(docker inspect \
+        --format={{.NetworkSettings.IPAddress}} \
+        tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello \
+    --data-binary '{"stuff": true}'
+```
+
+With an update in the stream:
+
+```json
+id: -576460752303423286
+event: set
+data: {"category":"user","key":"/hello","metadata":{"content_type":"application/json"},"value":{"stuff":true}}
+```
+
+#### Get
 
 Ask a random member of the cluster for the current value of "hello":
 
@@ -85,6 +111,8 @@ curl \
             --format={{.NetworkSettings.IPAddress}} \
             tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello
 ```
+
+#### Delete
 
 Ask a random member of the cluster to delete the key "hello":
 
@@ -105,7 +133,41 @@ event: deleted
 data: {"category":"user","deleted":"world","key":"/hello"}
 ```
 
-## Locks
+#### TTL
+
+A value can also be given a time to live by also supplying a TTL header:
+
+
+```shell
+curl \
+    -H "Content-Type: application/json" \
+    -H "ttl: 10" \
+    -i \
+    http://$(docker inspect \
+        --format={{.NetworkSettings.IPAddress}} \
+        tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello \
+    --data-binary '{"ephemeral": true}'
+```
+
+The event stream will contain details of the `set` together with a TTL
+attribute:
+
+```
+id: -576460752303423262
+event: set
+data: {"category":"user","key":"/hello","metadata":{"content_type":"application/json"},"ttl":10,"value":{"ephemeral":true}}
+```
+
+Ten seconds later when the key is removed:
+
+```
+id: -576460752303423238
+event: deleted
+data: {"category":"user","deleted":"{\"ephemeral\": true}","key":"/hello"}
+```
+
+
+### Locks
 
 Locks are obtained by issuing a HTTP GET on `/api/locks/` followed by
 the name of the lock. The response is a Server Sent Event stream that
@@ -147,7 +209,7 @@ One shell is granted the lock, with the remaining shells waiting their
 turn. Drop the lock by hitting `^C` on the holder, the lock is then
 allocated to another waiting shell.
 
-# Leadership Election
+## Leadership Election
 
 Tansu provides cluster information via the `/api/info` resource as
 follows, picking a random node:
@@ -156,7 +218,7 @@ follows, picking a random node:
 curl \
     -s \
     http://$(docker inspect \
-    --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $i))/api/info|python -m json.tool
+    --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/info|python -m json.tool
 ```
 
 Each node may be in `follower` or `candidate` state, with only one
@@ -340,6 +402,32 @@ The node will have same value as the remainder of the cluster:
 {"value":"100"}
 ```
 
+## Configuration
 
+Tansu uses the following configuration environment.
 
-
+|environment variable                     |default              |
+|-----------------------------------------|---------------------|
+|TANSU\_BATCH\_SIZE\_APPEND\_ENTRIES      |32                   |
+|TANSU\_CAN\_ADVERTISE                    |true                 |
+|TANSU\_CAN\_MESH                         |true                 |
+|TANSU\_SNAPSHOT\_DIRECTORY               |/snapshots           |
+|TANSU\_DEBUG                             |true                 |
+|TANSU\_SM                                |tansu\_sm\_mnesia\_kv|
+|TANSU\_ENDPOINT\_SERVER                  |/server              |
+|TANSU\_ENDPOINT\_API                     |/api                 |
+|TANSU\_HTTP\_PORT                        |80                   |
+|TANSU\_DB\_SCHEMA                        |ram                  |
+|TANSU\_ENVIRONMENT                       |dev                  |
+|TANSU\_ACCEPTORS                         |100                  |
+|TANSU\_TIMEOUT\_ELECTION\_LOW            |1500                 |
+|TANSU\_TIMEOUT\_ELECTION\_HIGH           |3000                 |
+|TANSU\_TIMEOUT\_LEADER\_LOW              |500                  |
+|TANSU\_TIMEOUT\_LEADER\_HIGH             |1000                 |
+|TANSU\_TIMEOUT\_KV\_EXPIRY               |1000                 |
+|TANSU\_TIMEOUT\_KV\_SNAPSHOT             |1000 * 60            |
+|TANSU\_TIMEOUT\_MNESIA\_WAIT\_FOR\_TABLES|infinity             |
+|TANSU\_TIMEOUT\_SYNC\_SEND\_EVENT        |infinity             |
+|TANSU\_TIMEOUT\_STREAM\_PING             |5000                 |
+|TANSU\_MINIMUM\_QUORUM                   |3                    |
+|TANSU\_MAXIMUM\_SNAPSHOT                 |3                    |
