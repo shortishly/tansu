@@ -342,6 +342,32 @@ The node will have same value as the remainder of the cluster:
 {"value":"100"}
 ```
 
+## Configuration
 
+Tansu uses the following configuration environment.
 
-
+|environment variable                     |default              |
+|-----------------------------------------|---------------------|
+|TANSU\_BATCH\_SIZE\_APPEND\_ENTRIES      |32                   |
+|TANSU\_CAN\_ADVERTISE                    |true                 |
+|TANSU\_CAN\_MESH                         |true                 |
+|TANSU\_SNAPSHOT\_DIRECTORY               |/snapshots           |
+|TANSU\_DEBUG                             |true                 |
+|TANSU\_SM                                |tansu\_sm\_mnesia\_kv|
+|TANSU\_ENDPOINT\_SERVER                  |/server              |
+|TANSU\_ENDPOINT\_API                     |/api                 |
+|TANSU\_HTTP\_PORT                        |80                   |
+|TANSU\_DB\_SCHEMA                        |ram                  |
+|TANSU\_ENVIRONMENT                       |dev                  |
+|TANSU\_ACCEPTORS                         |100                  |
+|TANSU\_TIMEOUT\_ELECTION\_LOW            |1500                 |
+|TANSU\_TIMEOUT\_ELECTION\_HIGH           |3000                 |
+|TANSU\_TIMEOUT\_LEADER\_LOW              |500                  |
+|TANSU\_TIMEOUT\_LEADER\_HIGH             |1000                 |
+|TANSU\_TIMEOUT\_KV\_EXPIRY               |1000                 |
+|TANSU\_TIMEOUT\_KV\_SNAPSHOT             |1000 * 60            |
+|TANSU\_TIMEOUT\_MNESIA\_WAIT\_FOR\_TABLES|infinity             |
+|TANSU\_TIMEOUT\_SYNC\_SEND\_EVENT        |infinity             |
+|TANSU\_TIMEOUT\_STREAM\_PING             |5000                 |
+|TANSU\_MINIMUM\_QUORUM                   |3                    |
+|TANSU\_MAXIMUM\_SNAPSHOT                 |3                    |
