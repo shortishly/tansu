@@ -32,7 +32,7 @@ interface.
 To start a 5 node Tansu cluster using Docker:
 
 ```shell
-for i in {1..5}; do 
+for i in {1..5}; do
     docker run \
         --name tansu-$(printf %03d $i) \
         -d shortishly/tansu;
@@ -44,12 +44,8 @@ done
 Using a random node in the cluster stream changes to the key "hello":
 
 ```shell
-curl \
-    -i \
-    -s \
-    http://$(docker inspect \
-            --format={{.NetworkSettings.IPAddress}} \
-            tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello?stream=true
+RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
+curl -i -s http://${RANDOM_IP}/api/keys/hello?stream=true
 ```
 
 Note that you can create streams from keys that do not currently exist
@@ -62,13 +58,8 @@ In another shell assign the value "world" to the key "hello" using a
 random member of the cluster:
 
 ```shell
-curl \
-    -i \
-    -s \
-    http://$(docker inspect \
-            --format={{.NetworkSettings.IPAddress}} \
-            tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello \
-            -d value=world
+RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
+curl -i -s http://${RANDOM_IP}/api/keys/hello -d value=world
 ```
 
 The stream will now contain a `set` notification:
@@ -82,13 +73,8 @@ data: {"category":"user","key":"/hello","metadata":{"content_type":"application/
 Or with a content type:
 
 ```shell
-curl \
-    -H "Content-Type: application/json" \
-    -i \
-    http://$(docker inspect \
-        --format={{.NetworkSettings.IPAddress}} \
-        tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello \
-    --data-binary '{"stuff": true}'
+RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
+curl-H "Content-Type: application/json" -i http://${RANDOM_IP}/api/keys/hello --data-binary '{"stuff": true}'
 ```
 
 With an update in the stream:
@@ -104,12 +90,8 @@ data: {"category":"user","key":"/hello","metadata":{"content_type":"application/
 Ask a random member of the cluster for the current value of "hello":
 
 ```shell
-curl \
-    -i \
-    -s \
-    http://$(docker inspect \
-            --format={{.NetworkSettings.IPAddress}} \
-            tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello
+RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
+curl -i -s http://${RANDOM_IP}/api/keys/hello
 ```
 
 #### Delete
@@ -117,12 +99,8 @@ curl \
 Ask a random member of the cluster to delete the key "hello":
 
 ```shell
-curl \
-    -i \
-    -X DELETE \
-    http://$(docker inspect \
-            --format={{.NetworkSettings.IPAddress}} \
-            tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello
+RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
+curl -i -X DELETE http://${RANDOM_IP}/api/keys/hello
 ```
 
 The stream now contains a `delete` notification:
@@ -139,14 +117,8 @@ A value can also be given a time to live by also supplying a TTL header:
 
 
 ```shell
-curl \
-    -H "Content-Type: application/json" \
-    -H "ttl: 10" \
-    -i \
-    http://$(docker inspect \
-        --format={{.NetworkSettings.IPAddress}} \
-        tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/keys/hello \
-    --data-binary '{"ephemeral": true}'
+RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
+curl -H "Content-Type: application/json" -H "ttl: 10" -i http://${RANDOM_IP}/api/keys/hello --data-binary '{"ephemeral": true}'
 ```
 
 The event stream will contain details of the `set` together with a TTL
@@ -179,30 +151,18 @@ connection.
 In several different shells simultaneously request a lock on "abc":
 
 ```shell
-curl \
-    -i \
-    -s \
-    http://$(docker inspect \
-            --format={{.NetworkSettings.IPAddress}} \
-            tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/locks/abc
+RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
+curl -i -s http://${RANDOM_IP}/api/locks/abc
 ```
 
 ```shell
-curl \
-    -i \
-    -s \
-    http://$(docker inspect \
-            --format={{.NetworkSettings.IPAddress}} \
-            tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/locks/abc
+RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
+curl -i -s http://${RANDOM_IP}/api/locks/abc
 ```
 
 ```shell
-curl \
-    -i \
-    -s \
-    http://$(docker inspect \
-            --format={{.NetworkSettings.IPAddress}} \
-            tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/locks/abc
+RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
+curl -i -s http://${RANDOM_IP}/api/locks/abc
 ```
 
 One shell is granted the lock, with the remaining shells waiting their
@@ -215,10 +175,8 @@ Tansu provides cluster information via the `/api/info` resource as
 follows, picking a random node:
 
 ```shell
-curl \
-    -s \
-    http://$(docker inspect \
-    --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))/api/info|python -m json.tool
+RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
+curl -s http://${RANDOM_IP}/api/info|python -m json.tool
 ```
 
 Each node may be in `follower` or `candidate` state, with only one
@@ -308,7 +266,10 @@ outputting the role of each member:
 ```shell
 for i in {1..5};
 do
-echo tansu-$(printf %03d $i) $(curl -m 1 -s http://$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $i))/api/info|jq .consensus.role);
+NAME=tansu-$(printf %03d $i)
+IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} ${NAME})
+ROLE=$(curl -m 1 -s http://${IP}/api/info|jq .consensus.role)
+echo ${NAME} ${ROLE}
 done
 ```
 
@@ -335,7 +296,10 @@ by repeating the curl of `/api/info` on the remaining nodes:
 ```shell
 for i in {1..5};
 do
-echo tansu-$(printf %03d $i) $(curl -m 1 -s http://$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $i))/api/info|jq .consensus.role);
+NAME=tansu-$(printf %03d $i)
+IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} ${NAME})
+ROLE=$(curl -m 1 -s http://${IP}/api/info|jq .consensus.role)
+echo ${NAME} ${ROLE}
 done
 ```
 
@@ -352,12 +316,10 @@ tansu-005 "follower"
 Fire some updates into one of the remaining nodes (change `tansu-003` to a running node):
 
 ```shell
+IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-003)
 for i in {0..100};
 do
-    curl \
-        -s \
-        http://$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-003)/api/keys/pqr \
-        -d value=$i;
+    curl -s http://${IP}/api/keys/pqr -d value=$i;
 done
 ```
 
@@ -376,7 +338,10 @@ Check that `tansu-002` has rejoined the cluster and is now in the `follower` rol
 ```shell
 for i in {1..5};
 do
-echo tansu-$(printf %03d $i) $(curl -m 1 -s http://$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $i))/api/info|jq .consensus.role);
+NAME=tansu-$(printf %03d $i)
+IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} ${NAME})
+ROLE=$(curl -m 1 -s http://${IP}/api/info|jq .consensus.role)
+echo ${NAME} ${ROLE};
 done
 ```
 
@@ -393,7 +358,8 @@ tansu-005 "follower"
 Ask the unpaused node for the value of `pqr`:
 
 ```shell
-curl -i http://$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-002)/api/keys/pqr
+IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-002)
+curl -i http://${IP}/api/keys/pqr
 ```
 
 The node will have same value as the remainder of the cluster:
