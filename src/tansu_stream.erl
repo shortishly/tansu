@@ -35,5 +35,6 @@ chunk(Id, Event, Data, Req) ->
        "\nevent: ",
        any:to_list(Event),
        "\ndata: ",
-       jsx:encode(Data), "\n\n"],
+       jsx:encode(Data),
+       "\n\n"],
       Req).

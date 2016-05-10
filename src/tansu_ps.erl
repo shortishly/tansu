@@ -21,7 +21,8 @@
 -export([voted_for/1]).
 -export([voted_for/2]).
 
--include("tansu_ps.hrl").
+
+-record(?MODULE, {id, term, voted_for}).
 
 create_table() ->
     Attributes = [{attributes, record_info(fields, ?MODULE)},

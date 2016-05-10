@@ -31,7 +31,8 @@
 -export([trace/1]).
 -export([write/2]).
 
--include("tansu_log.hrl").
+
+-record(?MODULE, {index, term, command}).
 
 create_table() ->
     Attributes = [{attributes, record_info(fields, ?MODULE)},
