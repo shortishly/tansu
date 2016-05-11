@@ -15,9 +15,6 @@
 -module(tansu_app).
 -behaviour(application).
 
--include("tansu_log.hrl").
--include("tansu_ps.hrl").
-
 -export([create_schema/0]).
 -export([create_tables/0]).
 -export([start/2]).

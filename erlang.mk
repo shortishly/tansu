@@ -16,7 +16,7 @@
 
 ERLANG_MK_FILENAME := $(realpath $(lastword $(MAKEFILE_LIST)))
 
-ERLANG_MK_VERSION = 2.0.0-pre.2-115-g11169e1
+ERLANG_MK_VERSION = 2.0.0-pre.2-117-g87a7632-dirty
 
 # Core configuration.
 
@@ -6609,11 +6609,21 @@ DOCKERFILE ?= $(CURDIR)/Dockerfile
 
 # Core targets.
 
+ifeq ($(shell which docker 2>/dev/null | wc -l), 1)
 ifeq ($(IS_DEP),)
 ifneq ($(wildcard $(DOCKERFILE)),)
+ifneq ($(PLATFORM),darwin)
 rel:: docker-build
 endif
 endif
+endif
+
+define docker_erlang_system_info_version.erl
+	io:format("~s~n", [erlang:system_info(version)]),
+	halt(0).
+endef
+
+DOCKER_SYSTEM_INFO_VERSION = `$(call erlang,$(call docker_erlang_system_info_version.erl))`
 
 
 # Plugin-specific targets.
@@ -6636,7 +6646,7 @@ docker-strip-erts-binaries:
 	done
 
 docker-build: relx-rel docker-scratch-cp-dynamic-libs docker-scratch-cp-link-loader docker-scratch-cp-sh docker-strip-erts-binaries
-	$(gen_verbose) docker build --quiet --tag $(RELX_RELEASE):$(PROJECT_VERSION) .
+	$(gen_verbose) docker build --build-arg REL_NAME=$(PROJECT)_release --build-arg ERTS_VSN=$(DOCKER_SYSTEM_INFO_VERSION) --quiet --tag $(RELX_RELEASE):$(PROJECT_VERSION) .
 
 docker-rm:
 	$(gen_verbose) docker rm -f $(RELX_RELEASE) &>/dev/null || exit 0
@@ -6646,3 +6656,5 @@ docker-run: docker-rm
 
 docker-logs:
 	$(gen_verbose) docker logs $(RELX_RELEASE)
+
+endif

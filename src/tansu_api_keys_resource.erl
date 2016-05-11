@@ -196,28 +196,10 @@ resource_exists(Req, _, State) ->
 
 
 info(#{id := Id, event := Event, data := #{metadata := #{content_type := <<"application/json">>}, value := Value} = Data, module := tansu_sm}, Req, State) ->
-    {cowboy_req:chunk(
-       ["id: ",
-        any:to_list(Id),
-        "\nevent: ",
-        any:to_list(Event),
-        "\ndata: ",
-        jsx:encode(Data#{value := jsx:decode(Value)}), "\n\n"],
-       Req),
-     Req,
-     State};
+    {tansu_stream:chunk(Id, Event, Data#{value := jsx:decode(Value)}, Req), Req, State};
 
 info(#{id := Id, event := Event, data := Data, module := tansu_sm}, Req, State) ->
-    {cowboy_req:chunk(
-       ["id: ",
-        any:to_list(Id),
-        "\nevent: ",
-        any:to_list(Event),
-        "\ndata: ",
-        jsx:encode(Data), "\n\n"],
-       Req),
-     Req,
-     State};
+    {tansu_stream:chunk(Id, Event, Data, Req), Req, State};
 
 info(Event, Req, #{proxy := Proxy} = State) ->
     Proxy:info(Event, Req, State).

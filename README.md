@@ -74,7 +74,7 @@ Or with a content type:
 
 ```shell
 RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
-curl-H "Content-Type: application/json" -i http://${RANDOM_IP}/api/keys/hello --data-binary '{"stuff": true}'
+curl -H "Content-Type: application/json" -i http://${RANDOM_IP}/api/keys/hello --data-binary '{"stuff": true}'
 ```
 
 With an update in the stream:
@@ -365,7 +365,7 @@ curl -i http://${IP}/api/keys/pqr
 The node will have same value as the remainder of the cluster:
 
 ```json
-{"value":"100"}
+value=100
 ```
 
 ## Configuration
