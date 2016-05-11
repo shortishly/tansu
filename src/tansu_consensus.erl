@@ -673,13 +673,10 @@ url(IP, Port) ->
 
 do_snapshot(#{last_applied := LastApplied, state_machine := StateMachine} = Data) ->
     {{Year, Month, Date}, {Hour, Minute, Second}} = erlang:universaltime(),
-    Name = filename:join(
-             tansu_config:directory(snapshot),
-             iolist_to_list(
-               io_lib:format(
-                 "~4..0w-~2..0w-~2..0wT~2..0w:~2..0w:~2..0wZ",
-                 [Year, Month, Date, Hour, Minute, Second]))),
-    file:make_dir(tansu_config:directory(snapshot)),
+    Name = iolist_to_list(
+             io_lib:format(
+               "~4..0w-~2..0w-~2..0wT~2..0w:~2..0w:~2..0wZ",
+               [Year, Month, Date, Hour, Minute, Second])),
     tansu_sm:snapshot(Name, LastApplied, StateMachine),
     prune_snapshots(),
     Data.
@@ -691,15 +688,29 @@ prune_snapshots() ->
 
 prune_snapshots(Directory, Maximum) ->
     case file:list_dir(Directory) of
-        {ok, Snapshots} when length(Snapshots) > Maximum ->
-            {_, TooMany} = lists:split(
-                                Maximum, lists:reverse(lists:sort(Snapshots))),
-            lists:foreach(
-              fun
-                  (Superflous) ->
-                      ok = file:delete(filename:join(Directory, Superflous))
-              end,
-              TooMany);
+        {ok, Snapshots} ->
+            case lists:filter(
+                   fun
+                       (<<_:4/bytes, "-", _:2/bytes, "-", _:2/bytes, "T", _:2/bytes, ":", _:2/bytes, ":", _:2/bytes, "Z">>) ->
+                           true;
+
+                       (_) ->
+                           false
+                   end,
+                   [any:to_binary(Snapshot) || Snapshot <- Snapshots]) of
+
+                Filtered when length(Filtered) > Maximum ->
+                    {_, TooMany} = lists:split(Maximum, lists:reverse(lists:sort(Filtered))),
+                    lists:foreach(
+                      fun
+                          (Superflous) ->
+                              ok = file:delete(filename:join(Directory, Superflous))
+                      end,
+                      TooMany);
+                
+                _ ->
+                    nop
+            end;
 
         _ ->
             nop

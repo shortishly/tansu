@@ -156,7 +156,8 @@ end_of_term(#{term := T0,
                                    case tansu_log:first() of
                                        #{index := LastIndexInSnapshot, command := #{m := tansu_sm, f := apply_snapshot, a := [Name]}, term := SnapshotTerm} when Index =< LastIndexInSnapshot ->
                                            
-                                           {ok, Snapshot} = file:read_file(Name),
+                                           Filename = filename:join(tansu_config:directory(snapshot), Name),
+                                           {ok, Snapshot} = file:read_file(Filename),
 
                                            tansu_consensus:do_send(
                                              tansu_rpc:install_snapshot(
