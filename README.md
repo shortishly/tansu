@@ -378,7 +378,7 @@ Tansu uses the following configuration environment.
 |TANSU\_CAN\_ADVERTISE                    |true                 |
 |TANSU\_CAN\_MESH                         |true                 |
 |TANSU\_SNAPSHOT\_DIRECTORY               |/snapshots           |
-|TANSU\_DEBUG                             |true                 |
+|TANSU\_DEBUG                             |false                |
 |TANSU\_SM                                |tansu\_sm\_mnesia\_kv|
 |TANSU\_ENDPOINT\_SERVER                  |/server              |
 |TANSU\_ENDPOINT\_API                     |/api                 |

@@ -27,6 +27,7 @@
 -behaviour(tansu_sm).
 
 -include_lib("stdlib/include/qlc.hrl").
+-include("tansu_log.hrl").
 
 -record(?MODULE, {key, parent, metadata = #{}, expiry, value}).
 
@@ -336,6 +337,15 @@ do_test_and_delete(Category, Key, ExistingValue) ->
               end
       end).
 
+temporary() ->
+    Unique = erlang:phash2({erlang:phash2(node()),
+                            erlang:monotonic_time(),
+                            erlang:unique_integer()}),
+    filename:join(
+      tansu_config:directory(snapshot),
+      "snapshot-" ++ integer_to_list(Unique)).
+
+
 do_snapshot(Name, LastApplied) ->
     activity(
       fun
@@ -346,18 +356,76 @@ do_snapshot(Name, LastApplied) ->
                       tansu_log:do_delete(First, LastApplied),
                       tansu_log:do_write(LastApplied, Term, #{m => tansu_sm, f => apply_snapshot, a => [Name]}),
                       {ok, Checkpoint, _} = mnesia:activate_checkpoint([{min, tables(snapshot)}]),
-                      ok = mnesia:backup_checkpoint(Checkpoint, Name),
-                      ok = mnesia:deactivate_checkpoint(Checkpoint);
-                  
+
+                      Temporary = temporary(),
+                      ok = filelib:ensure_dir(Temporary),
+                      ok = mnesia:backup_checkpoint(Checkpoint, Temporary),
+                      ok = mnesia:deactivate_checkpoint(Checkpoint),
+
+                      Filename = filename:join(tansu_config:directory(snapshot), Name),
+                      {ok, _} = mnesia:traverse_backup(
+                                  Temporary,
+                                  Filename,
+                                  fun
+                                      (#tansu_log{index = Index}, A) when Index == LastApplied ->
+                                          {[#tansu_log{index = LastApplied,
+                                                       term = Term,
+                                                       command = #{m => tansu_sm,
+                                                                   f => apply_snapshot,
+                                                                   a => [Name]}}], A};
+
+                                      (#tansu_log{}, A) ->
+                                          %% Drop all log records from the snapshot.
+                                          {[], A};
+
+                                      (Other, A) ->
+                                          {[Other], A}
+                                  end,
+                                  unused),
+                      ok = file:delete(Temporary);
+
                   _ ->
                       ok
               end
       end).
 
 do_install_snapshot(Name, Data) ->
-    ok = filelib:ensure_dir(Name),
-    ok = file:write_file(Name, Data),
-    {atomic, _} = mnesia:restore(Name, [{recreate_tables, tables(snapshot)}]),
+    Temporary = temporary(),
+    ok = filelib:ensure_dir(Temporary),
+    ok = file:write_file(Temporary, Data),
+    Transformed = filename:join(tansu_config:directory(snapshot), Name),
+    {ok, _} = mnesia:traverse_backup(
+                Temporary,
+                Transformed,
+                fun
+                    ({schema, db_nodes, _}, A) ->
+                        %% Ensure that the schema DB nodes is just
+                        %% this one.
+                        {[{schema, db_nodes, [node()]}], A};
+
+                    ({schema, Tab, Options}, A) ->
+                        {[{schema,
+                           Tab,
+                           lists:map(
+                             fun
+                                 ({Key, Nodes}) when (length(Nodes) > 0) andalso
+                                                     (Key == ram_copies orelse
+                                                      Key == disc_copies orelse
+                                                      Key == disc_only_copies) ->
+                                     {Key, [node()]};
+
+                                 ({Key, Value}) ->
+                                     {Key, Value}
+                             end,
+                             Options)}],
+                         A};
+
+                    (Other, A) ->
+                        {[Other], A}
+                end,
+                unused),
+    ok = file:delete(Temporary),
+    {atomic, _} = mnesia:restore(Transformed, [{recreate_tables, tables(snapshot)}]),
     ok.
 
 tables(snapshot) ->
