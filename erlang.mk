@@ -16,7 +16,7 @@
 
 ERLANG_MK_FILENAME := $(realpath $(lastword $(MAKEFILE_LIST)))
 
-ERLANG_MK_VERSION = 2.0.0-pre.2-116-gf7ecb59-dirty
+ERLANG_MK_VERSION = 2.0.0-pre.2-117-g87a7632-dirty
 
 # Core configuration.
 
@@ -6609,6 +6609,7 @@ DOCKERFILE ?= $(CURDIR)/Dockerfile
 
 # Core targets.
 
+ifeq ($(shell which docker 2>/dev/null | wc -l), 1)
 ifeq ($(IS_DEP),)
 ifneq ($(wildcard $(DOCKERFILE)),)
 ifneq ($(PLATFORM),darwin)
@@ -6655,3 +6656,5 @@ docker-run: docker-rm
 
 docker-logs:
 	$(gen_verbose) docker logs $(RELX_RELEASE)
+
+endif
