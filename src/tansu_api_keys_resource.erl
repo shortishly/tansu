@@ -130,8 +130,33 @@ content_types_provided(Req, #{key := Key} = State) ->
         {ok, Value, #{content_type := ContentType} = Metadata} ->
             {[{ContentType, to_identity}], Req, State#{value => #{data => Value, metadata => Metadata}}};
         
+        {error, not_found} = Error ->
+            case tansu_api:kv_get_children_of(Key) of
+                Children when map_size(Children) >= 0 ->
+
+                    {[{<<"application/json">>, to_identity}],
+                     Req,
+                     State#{value => #{
+                              data => 
+                                  jsx:encode(
+                                    maps:fold(
+                                      fun
+                                          (Child, {Value, #{content_type := <<"application/json">>} = Metadata}, A) ->
+                                              A#{Child => #{value => jsx:decode(Value), metadata => maps:without([content_type, parent, ttl], Metadata)}};
+                                          
+                                          (Child, {Value, Metadata}, A) ->
+                                              A#{Child => #{value => Value, metadata => maps:without([content_type, parent, ttl], Metadata)}}
+                                      end,
+                                      #{},
+                                      Children)),
+                              metadata => #{content_type => <<"application/json">>}
+                             }}};
+                _ ->
+                    {[{<<"text/plain">>, dummy_to_text_plain}], Req, State#{value => Error}}
+            end;
+        
         {error, _} = Error ->
-            {[{{<<"text">>, <<"plain">>, []}, dummy_to_text_plain}], Req, State#{value => Error}}
+            {[{<<"text/plain">>, dummy_to_text_plain}], Req, State#{value => Error}}
     end.
 
 to_identity(Req, #{value := #{data := Data}} = State) ->
