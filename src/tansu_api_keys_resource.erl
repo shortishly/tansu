@@ -19,6 +19,7 @@
 -export([content_types_accepted/2]).
 -export([content_types_provided/2]).
 -export([delete_resource/2]).
+-export([from_form_urlencoded/2]).
 -export([from_identity/2]).
 -export([info/3]).
 -export([init/2]).
@@ -66,7 +67,7 @@ init(Req, _, #{role := follower, connections := Connections, leader := #{id := L
               Req, #{host => binary_to_list(Host), port => Port});
         
         #{} ->
-            service_unavailable(Req, #{})
+            {ok, service_unavailable(Req), #{}}
     end;
 
 init(Req, _, #{role := leader} = Info, QS, undefined, undefined) ->
@@ -116,7 +117,7 @@ init(Req, _, #{role := leader} = Info, QS, TTL, ContentType) ->
 init(Req, _, _, _, _, _) ->
     %% Neither a leader nor a follower with an established
     %% leader then the service is unavailable.
-    service_unavailable(Req, #{}).
+    {ok, service_unavailable(Req), #{}}.
 
 allowed_methods(Req, State) ->
     {[<<"DELETE">>,
@@ -125,6 +126,9 @@ allowed_methods(Req, State) ->
       <<"OPTIONS">>,
       <<"POST">>,
       <<"PUT">>], Req, State}.
+
+content_types_accepted(Req, #{content_type := <<"application/x-www-form-urlencoded">> = ContentType} = State) ->
+    {[{ContentType, from_form_urlencoded}], Req, State};
 
 content_types_accepted(Req, #{content_type := ContentType} = State) ->
     {[{ContentType, from_identity}], Req, State}.
@@ -194,8 +198,36 @@ slash_separated(PathInfo) ->
       <<>>,
       PathInfo).
 
+from_form_urlencoded(Req0, State) ->
+    case cowboy_req:body_qs(Req0) of
+        {ok, KVS, Req1} ->
+            from_form_url_encoded(Req1, maps:from_list(KVS), State);
+
+        _ ->
+            {stop, bad_request(Req0), State}
+    end.
+
+from_form_url_encoded(Req, #{<<"value">> := Value}, State) ->
+    from_identity({ok, Value, Req}, <<>>, State).
+
 from_identity(Req, State) ->
     from_identity(cowboy_req:body(Req), <<>>, State).
+
+from_identity({ok, Final, Req}, Partial, #{qs := #{<<"prevExist">> := <<"false">>}, key := Key, content_type := <<"application/x-www-form-urlencoded">>} = State) ->
+    kv_test_and_set(
+      Req,
+      Key,
+      undefined,
+      <<Partial/binary, Final/binary>>,
+      State#{content_type := <<"text/plain">>});
+
+from_identity({ok, Final, Req}, Partial, #{qs := #{<<"prevValue">> := ExistingValue}, key := Key, content_type := <<"application/x-www-form-urlencoded">>} = State) ->
+    kv_test_and_set(
+      Req,
+      Key,
+      ExistingValue,
+      <<Partial/binary, Final/binary>>,
+      State#{content_type := <<"text/plain">>});
 
 from_identity({ok, Final, Req}, Partial, #{key := Key} = State) ->
     kv_set(
@@ -207,14 +239,43 @@ from_identity({ok, Final, Req}, Partial, #{key := Key} = State) ->
 from_identity({more, Part, Req}, Partial, State) ->
     from_identity(cowboy_req:body(Req), <<Partial/binary, Part/binary>>, State).
 
+kv_test_and_set(Req, Key, ExistingValue, NewValue, State) ->
+    case tansu_api:kv_test_and_set(
+           Key,
+           ExistingValue,
+           NewValue,
+           maps:with([content_type, parent, ttl], State)) of
+
+        ok ->
+            {true, Req, State};
+
+        error ->
+            {stop, conflict(Req), State};
+
+        {error, not_leader} ->
+            {stop, service_unavailable(Req), State}
+    end.
+
 kv_set(Req, Key, Value, State) ->
     case tansu_api:kv_set(Key, Value, maps:with([content_type, parent, ttl], State)) of
         ok ->
             {true, Req, State};
         
         {error, not_leader} ->
-            service_unavailable(Req, State)
+            {stop, service_unavailable(Req), State}
     end.
+
+
+
+
+delete_resource(Req, #{qs := #{<<"prevValue">> := ExistingValue}, key := Key} = State) ->
+    case tansu_api:kv_test_and_delete(Key, ExistingValue) of
+        ok ->
+            {true, Req, State};
+
+        error ->
+            {stop, conflict(Req), State}
+    end;
 
 delete_resource(Req, #{key := Key} = State) ->
     {tansu_api:kv_delete(Key) == ok, Req, State}.
@@ -228,7 +289,15 @@ resource_exists(Req, <<"GET">>, #{value := {error, not_found}} = State) ->
     {false, Req, State};
 resource_exists(Req, <<"GET">>, #{value := {error, not_leader}} = State) ->
     %% whoa, we were the leader, but we're not now
-    service_unavailable(Req, State);
+    {stop, service_unavailable(Req), State};
+
+resource_exists(Req, <<"DELETE">>, #{value := #{data := _, metadata := _}} = State) ->
+    {true, Req, State};
+resource_exists(Req, <<"DELETE">>, #{value := {error, not_found}} = State) ->
+    {false, Req, State};
+resource_exists(Req, <<"DELETE">>, #{value := {error, not_leader}} = State) ->
+    %% whoa, we were the leader, but we're not now
+    {stop, service_unavailable(Req), State};
 resource_exists(Req, _, State) ->
     {true, Req, State}.
 
@@ -250,8 +319,14 @@ terminate(_Reason, _Req, _) ->
     %% nothing to clean up here.
     tansu_sm:goodbye().
                 
-service_unavailable(Req, State) ->
-    stop_with_code(503, Req, State).
+bad_request(Req) ->
+    stop_with_code(400, Req).
 
-stop_with_code(Code, Req, State) ->
-    {ok, cowboy_req:reply(Code, Req), State}.
+conflict(Req) ->
+    stop_with_code(409, Req).
+
+service_unavailable(Req) ->
+    stop_with_code(503, Req).
+
+stop_with_code(Code, Req) ->
+    cowboy_req:reply(Code, Req).
