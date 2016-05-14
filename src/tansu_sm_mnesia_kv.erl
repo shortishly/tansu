@@ -16,6 +16,7 @@
 
 -export([ckv_delete/3]).
 -export([ckv_get/3]).
+-export([ckv_get_children_of/3]).
 -export([ckv_set/5]).
 -export([ckv_test_and_delete/4]).
 -export([ckv_test_and_set/6]).
@@ -51,6 +52,9 @@ new() ->
 ckv_get(Category, Key, ?MODULE = StateMachine) ->
     {do_get(Category, Key), StateMachine}.
 
+ckv_get_children_of(Category, Key, ?MODULE = StateMachine) ->
+    {do_get_children_of(Category, Key), StateMachine}.
+
 ckv_delete(Category, Key, ?MODULE = StateMachine) ->
     {do_delete(Category, Key), StateMachine}.
 
@@ -83,7 +87,22 @@ do_get(Category, Key) ->
                         [] ->
                             {error, not_found}
                     end
-            end).
+      end).
+
+do_get_children_of(ParentCategory, ParentKey) ->
+    activity(
+      fun
+          () ->
+              qlc:fold(
+                fun
+                    (#?MODULE{key = Key, value = Value, metadata = Metadata}, A) ->
+                        A#{Key => {Value, Metadata}}
+                end,
+                #{},
+                qlc:q(
+                  [Child || #?MODULE{parent = Parent} = Child <- mnesia:table(?MODULE),
+                            Parent == {ParentCategory, ParentKey}]))
+      end).
 
 do_delete(Category, Key) ->
     activity(
