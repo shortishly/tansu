@@ -20,6 +20,7 @@
 -export([candidate/2]).
 -export([ckv_delete/2]).
 -export([ckv_get/2]).
+-export([ckv_get_children_of/2]).
 -export([ckv_set/3]).
 -export([ckv_set/4]).
 -export([ckv_test_and_delete/3]).
@@ -115,6 +116,9 @@ ckv_set(Category, Key, Value, TTL) ->
 
 ckv_get(Category, Key) ->
     sync_send_all_state_event({ckv_get, Category, Key}).
+
+ckv_get_children_of(Category, Key) ->
+    sync_send_all_state_event({ckv_get_children_of, Category, Key}).
 
 ckv_delete(Category, Key) ->
     sync_send_all_state_event({ckv_delete, Category, Key}).
@@ -213,6 +217,13 @@ handle_sync_event({ckv_get, _, _}, _, StateName, #{state_machine := undefined} =
 
 handle_sync_event({ckv_get, Category, Key}, _, StateName, #{state_machine := StateMachine} = Data) ->
     {Result, StateMachine} = tansu_sm:ckv_get(Category, Key, StateMachine),
+    {reply, Result, StateName, Data};
+
+handle_sync_event({ckv_get_children_of, _, _}, _, StateName, #{state_machine := undefined} = Data) ->
+    {reply, error, StateName, Data};
+
+handle_sync_event({ckv_get_children_of, Category, Key}, _, StateName, #{state_machine := StateMachine} = Data) ->
+    {Result, StateMachine} = tansu_sm:ckv_get_children_of(Category, Key, StateMachine),
     {reply, Result, StateName, Data};
 
 handle_sync_event(Event, From, StateName = leader, Data) when is_tuple(Event) ->

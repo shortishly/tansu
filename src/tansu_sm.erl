@@ -16,6 +16,7 @@
 
 -export([ckv_delete/3]).
 -export([ckv_get/3]).
+-export([ckv_get_children_of/3]).
 -export([ckv_set/5]).
 -export([ckv_test_and_delete/4]).
 -export([ckv_test_and_set/6]).
@@ -46,6 +47,13 @@
                                                        {error, Reason :: atom()},
                                                        StateMachine :: state_machine()}.
 
+-callback ckv_get_children_of(ParentCategory :: atom(),
+                              ParentKey :: binary(),
+                              StateMachine :: state_machine()) -> {{ok, #{Key :: binary() => {Value :: any(), Metadata :: map()}}} |
+                                                                   {error, Reason :: string()} |
+                                                                   {error, Reason :: atom()},
+                                                                   StateMachine :: state_machine()}.
+
 -callback ckv_delete(Category :: atom(),
                      Key :: binary(),
                      StateMachine :: state_machine()) -> {ok |
@@ -57,7 +65,7 @@
                   Key :: binary(),
                   Value :: any(),
                   Metadata :: map(),
-                  StateMachine :: state_machine()) -> {ok |
+                  StateMachine :: state_machine()) -> {{ok, PreviousValue :: any()} |
                                                        {error, Reason :: string()} |
                                                        {error, Reason :: atom()},
                                                        StateMachine :: state_machine()}.
@@ -66,7 +74,7 @@
 -callback ckv_test_and_delete(Category :: atom(),
                               Key :: binary(),
                               ExistingValue :: any(),
-                              StateMachine :: state_machine()) -> {ok |
+                              StateMachine :: state_machine()) -> {{ok, PreviousValue :: any()} |
                                                                    {error, Reason :: string()} |
                                                                    {error, Reason :: atom()},
                                                                    StateMachine :: state_machine()}.
@@ -75,7 +83,7 @@
                            ExistingValue :: any(),
                            NewValue :: any(),
                            Options :: map(),
-                           StateMachine :: state_machine()) -> {ok |
+                           StateMachine :: state_machine()) -> {{ok, PreviousValue :: any()} |
                                                                 {error, Reason :: string()} |
                                                                 {error, Reason :: atom()},
                                                                 StateMachine :: state_machine()}.
@@ -85,6 +93,9 @@ new() ->
 
 ckv_get(Category, Key, StateMachine) ->
     (tansu_config:sm()):ckv_get(Category, Key, StateMachine).
+
+ckv_get_children_of(Category, Key, StateMachine) ->
+    (tansu_config:sm()):ckv_get_children_of(Category, Key, StateMachine).
 
 ckv_delete(Category, Key, StateMachine) ->
     (tansu_config:sm()):ckv_delete(Category, Key, StateMachine).

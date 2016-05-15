@@ -57,20 +57,21 @@ init(Req, _) ->
 info(try_lock, Req, State) ->
     do_try_lock(Req, State);
 
-info(#{event := set, data := #{value := Key}, module := tansu_sm}, Req, #{key := Key, n := N} = State) ->
+
+info(#{event := delete, module := tansu_sm}, Req, State) ->
+    %% The lock has been deleted, try and obtain the lock if there is
+    %% also a leader.
+    do_try_lock(Req, State);
+
+info(#{data := #{value := Key}, module := tansu_sm}, Req, #{key := Key, n := N} = State) ->
     %% The lock has been granted, by setting the value to our key.
     {ok, Req, State#{n := N+1}};
 
-info(#{event := set, data := #{value := Key}, module := tansu_sm}, Req, #{n := N} = State) ->
+info(#{data := #{value := Key}, module := tansu_sm}, Req, #{n := N} = State) ->
     %% The lock has been granted to someone else by setting its value
     %% to their key.
     tansu_stream:chunk(N, not_granted, #{locked_by => Key}, Req),
     {ok, Req, State#{n := N+1}};
-
-info(#{event := deleted, module := tansu_sm}, Req, State) ->
-    %% The lock has been deleted, try and obtain the lock if there is
-    %% also a leader.
-    do_try_lock(Req, State);
 
 info(ping, Req, #{n := N} = State) ->
     tansu_stream:chunk(N, ping, Req),
@@ -97,7 +98,7 @@ do_try_lock(Req, #{lock := Lock, key := Key, n := N} = State) ->
             tansu_stream:chunk(N, not_granted, #{service_unavailable => not_leader}, Req),
             {stop, Req, State#{n := N+1}};
 
-        ok ->
+        {ok, _} ->
             tansu_stream:chunk(N, granted, Req),
             {ok, Req, State#{n := N+1}};
 

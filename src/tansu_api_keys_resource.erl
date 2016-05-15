@@ -19,6 +19,7 @@
 -export([content_types_accepted/2]).
 -export([content_types_provided/2]).
 -export([delete_resource/2]).
+-export([from_form_urlencoded/2]).
 -export([from_identity/2]).
 -export([info/3]).
 -export([init/2]).
@@ -27,92 +28,96 @@
 -export([to_identity/2]).
 
 init(Req, _) ->
-    case {cowboy_req:method(Req),
-          tansu_consensus:info(),
-          maps:from_list(cowboy_req:parse_qs(Req)),
-          cowboy_req:header(<<"ttl">>, Req)} of
+    init(
+      Req,
+      cowboy_req:method(Req),
+      tansu_consensus:info(),
+      maps:from_list(cowboy_req:parse_qs(Req)),
+      cowboy_req:header(<<"ttl">>, Req),
+      cowboy_req:header(<<"content-type">>, Req)).
 
-        {<<"GET">>, Info, #{<<"stream">> := <<"true">>}, _} ->
-            %% An event stream can be established with any member of
-            %% the cluster.
-	    Headers = [{<<"content-type">>, <<"text/event-stream">>},
-		       {<<"cache-control">>, <<"no-cache">>}],
-            tansu_api:kv_subscribe(key(Req)),
-	    {cowboy_loop,
-             cowboy_req:chunked_reply(200, Headers, Req),
-             #{info => Info}};
 
-        {<<"GET">>, #{role := follower, leader := _, cluster := _} = Info, _, _} ->
-            %% followers with an established leader and cluster can
-            %% handle simple KV GET requests.
-            {cowboy_rest,
-             Req,
-             #{info => Info,
-               path => cowboy_req:path(Req),
-               key => key(Req),
-               parent => parent(Req)}};
+init(Req, <<"GET">>, Info, #{<<"stream">> := <<"true">>}, _, _) ->
+    %% An event stream can be established with any member of
+    %% the cluster.
+    Headers = [{<<"content-type">>, <<"text/event-stream">>},
+               {<<"cache-control">>, <<"no-cache">>}],
+    tansu_api:kv_subscribe(key(Req)),
+    {cowboy_loop,
+     cowboy_req:chunked_reply(200, Headers, Req),
+     #{info => Info}};
 
-        {_, #{role := follower, connections := Connections, leader := #{id := Leader}, cluster := _}, _, _} ->
-            %% Requests other than GETs should be proxied to the
-            %% leader.
-            case Connections of
-                #{Leader := #{host := Host, port := Port}} ->
-                    tansu_api_proxy_resource:init(
-                      Req, #{host => binary_to_list(Host), port => Port});
+init(Req, <<"GET">>, #{role := follower, leader := _, cluster := _} = Info, QS, _, _) ->
+    %% followers with an established leader and cluster can
+    %% handle simple KV GET requests.
+    {cowboy_rest,
+     Req,
+     #{info => Info,
+       path => cowboy_req:path(Req),
+       key => key(Req),
+       qs => QS,
+       parent => parent(Req)}};
 
-                #{} ->
-                    service_unavailable(Req, #{})
-            end;
+init(Req, _, #{role := follower, connections := Connections, leader := #{id := Leader}, cluster := _}, _, _, _) ->
+    %% Requests other than GETs should be proxied to the
+    %% leader.
+    case Connections of
+        #{Leader := #{host := Host, port := Port}} ->
+            tansu_api_proxy_resource:init(
+              Req, #{host => binary_to_list(Host), port => Port});
+        
+        #{} ->
+            {ok, service_unavailable(Req), #{}}
+    end;
 
-        {_, #{role := leader} = Info, _, undefined} ->
-            %% The leader can deal directly with any request.
-            case cowboy_req:parse_header(<<"content-type">>, Req) of
-                undefined ->
-                    {cowboy_rest,
-                     Req,
-                     #{info => Info,
-                       path => cowboy_req:path(Req),
-                       key => key(Req),
-                       parent => parent(Req)}};
+init(Req, _, #{role := leader} = Info, QS, undefined, undefined) ->
+    %% The leader can deal directly with any request.
+    {cowboy_rest,
+     Req,
+     #{info => Info,
+       path => cowboy_req:path(Req),
+       key => key(Req),
+       qs => QS,
+       parent => parent(Req)}};
 
-                {Type, Subtype, _} ->
-                    {cowboy_rest,
-                     Req,
-                     #{info => Info,
-                       content_type => <<Type/bytes, "/", Subtype/bytes>>,
-                       path => cowboy_req:path(Req),
-                       key => key(Req),
-                       parent => parent(Req)}}
-            end;
+init(Req, _, #{role := leader} = Info, QS, undefined, ContentType) ->
+    %% The leader can deal directly with any request.
+    {cowboy_rest,
+     Req,
+     #{info => Info,
+       content_type => ContentType,
+       path => cowboy_req:path(Req),
+       qs => QS,
+       key => key(Req),
+       parent => parent(Req)}};
 
-        {_, #{role := leader} = Info, _, TTL} ->
-            %% The leader can deal directly with any request.
-            case cowboy_req:parse_header(<<"content-type">>, Req) of
-                undefined ->
-                    {cowboy_rest,
-                     Req,
-                     #{info => Info,
-                       path => cowboy_req:path(Req),
-                       ttl => binary_to_integer(TTL),
-                       key => key(Req),
-                       parent => parent(Req)}};
+init(Req, _, #{role := leader} = Info, QS, TTL, undefined) ->
+    %% The leader can deal directly with any request.
+    {cowboy_rest,
+     Req,
+     #{info => Info,
+       path => cowboy_req:path(Req),
+       ttl => binary_to_integer(TTL),
+       key => key(Req),
+       qs => QS,
+       parent => parent(Req)}};
 
-                {Type, Subtype, _} ->
-                    {cowboy_rest,
-                     Req,
-                     #{info => Info,
-                       content_type => <<Type/bytes, "/", Subtype/bytes>>,
-                       path => cowboy_req:path(Req),
-                       ttl => binary_to_integer(TTL),
-                       key => key(Req),
-                       parent => parent(Req)}}
-            end;
+init(Req, _, #{role := leader} = Info, QS, TTL, ContentType) ->
+    %% The leader can deal directly with any request.
+    {cowboy_rest,
+     Req,
+     #{info => Info,
+       content_type => ContentType,
+       path => cowboy_req:path(Req),
+       ttl => binary_to_integer(TTL),
+       key => key(Req),
+       qs => QS,
+       parent => parent(Req)}};
 
-        {_, _, _, _} ->
-            %% Neither a leader nor a follower with an established
-            %% leader then the service is unavailable.
-            service_unavailable(Req, #{})
-    end.
+init(Req, _, _, _, _, _) ->
+    %% Neither a leader nor a follower with an established
+    %% leader then the service is unavailable.
+    {ok, service_unavailable(Req), #{}}.
 
 allowed_methods(Req, State) ->
     {[<<"DELETE">>,
@@ -122,6 +127,9 @@ allowed_methods(Req, State) ->
       <<"POST">>,
       <<"PUT">>], Req, State}.
 
+content_types_accepted(Req, #{content_type := <<"application/x-www-form-urlencoded">> = ContentType} = State) ->
+    {[{ContentType, from_form_urlencoded}], Req, State};
+
 content_types_accepted(Req, #{content_type := ContentType} = State) ->
     {[{ContentType, from_identity}], Req, State}.
 
@@ -130,9 +138,43 @@ content_types_provided(Req, #{key := Key} = State) ->
         {ok, Value, #{content_type := ContentType} = Metadata} ->
             {[{ContentType, to_identity}], Req, State#{value => #{data => Value, metadata => Metadata}}};
         
+        {error, not_found} = Error ->
+            case tansu_api:kv_get_children_of(Key) of
+                Children when map_size(Children) > 0 ->
+
+                    {[{<<"application/json">>, to_identity}],
+                     Req,
+                     State#{value => #{
+                              data => 
+                                  jsx:encode(
+                                    #{
+                                       children => 
+                                           maps:fold(
+                                             fun
+                                                 (Child, {Value, #{content_type := <<"application/json">>} = Metadata}, A) ->
+                                                     A#{Child => #{value => jsx:decode(Value), metadata => without_reserved(Metadata)}};
+                                                 
+                                                 (Child, {Value, Metadata}, A) ->
+                                                     A#{Child => #{value => Value, metadata => without_reserved(Metadata)}}
+                                             end,
+                                             #{},
+                                             Children)
+                                     }),
+                              metadata => #{content_type => <<"application/json">>}
+                             }}};
+                _ ->
+                    {[{<<"text/plain">>, dummy_to_text_plain}], Req, State#{value => Error}}
+            end;
+        
         {error, _} = Error ->
-            {[{{<<"text">>, <<"plain">>, []}, dummy_to_text_plain}], Req, State#{value => Error}}
+            {[{<<"text/plain">>, dummy_to_text_plain}], Req, State#{value => Error}}
     end.
+
+without_reserved(Metadata) ->
+    maps:without(reserved(), Metadata).
+
+reserved() ->
+    [content_type, parent, ttl].
 
 to_identity(Req, #{value := #{data := Data}} = State) ->
     {Data, Req, State}.
@@ -156,8 +198,43 @@ slash_separated(PathInfo) ->
       <<>>,
       PathInfo).
 
+from_form_urlencoded(Req0, State) ->
+    case cowboy_req:body_qs(Req0) of
+        {ok, KVS, Req1} ->
+            from_form_url_encoded(Req1, maps:from_list(KVS), State);
+
+        _ ->
+            {stop, bad_request(Req0), State}
+    end.
+
+from_form_url_encoded(Req, #{<<"value">> := Value}, State) ->
+    from_identity({ok, Value, Req}, <<>>, State).
+
 from_identity(Req, State) ->
     from_identity(cowboy_req:body(Req), <<>>, State).
+
+from_identity({ok, Final, Req}, Partial, #{qs := #{<<"prevExist">> := <<"false">>}, key := Key, content_type := <<"application/x-www-form-urlencoded">>} = State) ->
+    kv_test_and_set(
+      Req,
+      Key,
+      undefined,
+      <<Partial/binary, Final/binary>>,
+      State#{content_type := <<"text/plain">>});
+
+from_identity({ok, Final, Req}, Partial, #{qs := #{<<"prevValue">> := ExistingValue}, key := Key, content_type := <<"application/x-www-form-urlencoded">>} = State) ->
+    kv_test_and_set(
+      Req,
+      Key,
+      ExistingValue,
+      <<Partial/binary, Final/binary>>,
+      State#{content_type := <<"text/plain">>});
+
+from_identity({ok, Final, Req}, Partial, #{key := Key, content_type := <<"application/x-www-form-urlencoded">>} = State) ->
+    kv_set(
+      Req,
+      Key,
+      <<Partial/binary, Final/binary>>,
+      State#{content_type := <<"text/plain">>});
 
 from_identity({ok, Final, Req}, Partial, #{key := Key} = State) ->
     kv_set(
@@ -169,28 +246,62 @@ from_identity({ok, Final, Req}, Partial, #{key := Key} = State) ->
 from_identity({more, Part, Req}, Partial, State) ->
     from_identity(cowboy_req:body(Req), <<Partial/binary, Part/binary>>, State).
 
+kv_test_and_set(Req, Key, ExistingValue, NewValue, State) ->
+    case tansu_api:kv_test_and_set(
+           Key,
+           ExistingValue,
+           NewValue,
+           maps:with([content_type, parent, ttl], State)) of
+
+        {ok, _} ->
+            {true, Req, State};
+
+
+        error ->
+            {stop, conflict(Req), State};
+
+        {error, not_leader} ->
+            {stop, service_unavailable(Req), State}
+    end.
+
 kv_set(Req, Key, Value, State) ->
     case tansu_api:kv_set(Key, Value, maps:with([content_type, parent, ttl], State)) of
-        ok ->
+        {ok, _} ->
             {true, Req, State};
         
         {error, not_leader} ->
-            service_unavailable(Req, State)
+            {stop, service_unavailable(Req), State}
     end.
 
+delete_resource(Req, #{qs := #{<<"prevValue">> := ExistingValue}, key := Key} = State) ->
+    case tansu_api:kv_test_and_delete(Key, ExistingValue) of
+        {ok, _} ->
+            {true, Req, State};
+
+        error ->
+            {stop, conflict(Req), State}
+    end;
+
 delete_resource(Req, #{key := Key} = State) ->
-    {tansu_api:kv_delete(Key) == ok, Req, State}.
+    case tansu_api:kv_delete(Key) of
+        {ok, _} ->
+            {true, Req, State};
+
+        error ->
+            {false, Req, State}
+    end.
+
 
 resource_exists(Req, State) ->
     resource_exists(Req, cowboy_req:method(Req), State).
 
-resource_exists(Req, <<"GET">>, #{value := #{data := _, metadata := _}} = State) ->
+resource_exists(Req, _, #{value := #{data := _, metadata := _}} = State) ->
     {true, Req, State};
-resource_exists(Req, <<"GET">>, #{value := {error, not_found}} = State) ->
+resource_exists(Req, _, #{value := {error, not_found}} = State) ->
     {false, Req, State};
-resource_exists(Req, <<"GET">>, #{value := {error, not_leader}} = State) ->
+resource_exists(Req, _, #{value := {error, not_leader}} = State) ->
     %% whoa, we were the leader, but we're not now
-    service_unavailable(Req, State);
+    {stop, service_unavailable(Req), State};
 resource_exists(Req, _, State) ->
     {true, Req, State}.
 
@@ -212,8 +323,14 @@ terminate(_Reason, _Req, _) ->
     %% nothing to clean up here.
     tansu_sm:goodbye().
                 
-service_unavailable(Req, State) ->
-    stop_with_code(503, Req, State).
+bad_request(Req) ->
+    stop_with_code(400, Req).
 
-stop_with_code(Code, Req, State) ->
-    {ok, cowboy_req:reply(Code, Req), State}.
+conflict(Req) ->
+    stop_with_code(409, Req).
+
+service_unavailable(Req) ->
+    stop_with_code(503, Req).
+
+stop_with_code(Code, Req) ->
+    cowboy_req:reply(Code, Req).
