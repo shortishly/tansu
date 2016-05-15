@@ -335,6 +335,9 @@ do_test_and_set(Category, Key, ExistingValue, NewValue, #{ttl := TTL} = Options)
                                                        value => NewValue}),
                       {ok, ExistingValue};
 
+                  [#?MODULE{}] ->
+                      %% Not the value that we were expecting.
+                      error;
 
                   [] ->
                       error
@@ -366,6 +369,10 @@ do_test_and_set(Category, Key, ExistingValue, NewValue, Metadata) ->
                                                        previous => ExistingValue,
                                                        value => NewValue}),
                       {ok, ExistingValue};
+
+                  [#?MODULE{}] ->
+                      %% Not the value that we were expecting.
+                      error;
 
                   [] ->
                       error
