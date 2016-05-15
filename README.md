@@ -138,6 +138,29 @@ event: deleted
 data: {"category":"user","deleted":"{\"ephemeral\": true}","key":"/hello"}
 ```
 
+### Test and Set
+
+Set the value of `/cas/bob` to be `jack` only if that key does not already exist:
+
+```shell
+RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
+curl -X PUT -i http://${RANDOM_IP}/api/keys/cas/bob?prevExist=false -d value=jack
+```
+
+Set the value of `/cas/bob` to be `quentin` only if its current value is `jack`:
+
+```shell
+RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
+curl -X PUT -i http://${RANDOM_IP}/api/keys/cas/bob?prevValue=jack -d value=quentin
+```
+
+Delete the value of `/cas/bob` only if its current value is `quentin`:
+
+```shell
+RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
+curl -X DELETE -i http://${RANDOM_IP}/api/keys/cas/bob?prevValue=quentin
+```
+
 
 ### Locks
 
