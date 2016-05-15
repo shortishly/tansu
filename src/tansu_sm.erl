@@ -65,7 +65,7 @@
                   Key :: binary(),
                   Value :: any(),
                   Metadata :: map(),
-                  StateMachine :: state_machine()) -> {ok |
+                  StateMachine :: state_machine()) -> {{ok, PreviousValue :: any()} |
                                                        {error, Reason :: string()} |
                                                        {error, Reason :: atom()},
                                                        StateMachine :: state_machine()}.
@@ -74,7 +74,7 @@
 -callback ckv_test_and_delete(Category :: atom(),
                               Key :: binary(),
                               ExistingValue :: any(),
-                              StateMachine :: state_machine()) -> {ok |
+                              StateMachine :: state_machine()) -> {{ok, PreviousValue :: any()} |
                                                                    {error, Reason :: string()} |
                                                                    {error, Reason :: atom()},
                                                                    StateMachine :: state_machine()}.
@@ -83,7 +83,7 @@
                            ExistingValue :: any(),
                            NewValue :: any(),
                            Options :: map(),
-                           StateMachine :: state_machine()) -> {ok |
+                           StateMachine :: state_machine()) -> {{ok, PreviousValue :: any()} |
                                                                 {error, Reason :: string()} |
                                                                 {error, Reason :: atom()},
                                                                 StateMachine :: state_machine()}.

@@ -229,6 +229,13 @@ from_identity({ok, Final, Req}, Partial, #{qs := #{<<"prevValue">> := ExistingVa
       <<Partial/binary, Final/binary>>,
       State#{content_type := <<"text/plain">>});
 
+from_identity({ok, Final, Req}, Partial, #{key := Key, content_type := <<"application/x-www-form-urlencoded">>} = State) ->
+    kv_set(
+      Req,
+      Key,
+      <<Partial/binary, Final/binary>>,
+      State#{content_type := <<"text/plain">>});
+
 from_identity({ok, Final, Req}, Partial, #{key := Key} = State) ->
     kv_set(
       Req,
@@ -246,8 +253,9 @@ kv_test_and_set(Req, Key, ExistingValue, NewValue, State) ->
            NewValue,
            maps:with([content_type, parent, ttl], State)) of
 
-        ok ->
+        {ok, _} ->
             {true, Req, State};
+
 
         error ->
             {stop, conflict(Req), State};
@@ -258,19 +266,16 @@ kv_test_and_set(Req, Key, ExistingValue, NewValue, State) ->
 
 kv_set(Req, Key, Value, State) ->
     case tansu_api:kv_set(Key, Value, maps:with([content_type, parent, ttl], State)) of
-        ok ->
+        {ok, _} ->
             {true, Req, State};
         
         {error, not_leader} ->
             {stop, service_unavailable(Req), State}
     end.
 
-
-
-
 delete_resource(Req, #{qs := #{<<"prevValue">> := ExistingValue}, key := Key} = State) ->
     case tansu_api:kv_test_and_delete(Key, ExistingValue) of
-        ok ->
+        {ok, _} ->
             {true, Req, State};
 
         error ->
@@ -278,24 +283,23 @@ delete_resource(Req, #{qs := #{<<"prevValue">> := ExistingValue}, key := Key} = 
     end;
 
 delete_resource(Req, #{key := Key} = State) ->
-    {tansu_api:kv_delete(Key) == ok, Req, State}.
+    case tansu_api:kv_delete(Key) of
+        {ok, _} ->
+            {true, Req, State};
+
+        error ->
+            {false, Req, State}
+    end.
+
 
 resource_exists(Req, State) ->
     resource_exists(Req, cowboy_req:method(Req), State).
 
-resource_exists(Req, <<"GET">>, #{value := #{data := _, metadata := _}} = State) ->
+resource_exists(Req, _, #{value := #{data := _, metadata := _}} = State) ->
     {true, Req, State};
-resource_exists(Req, <<"GET">>, #{value := {error, not_found}} = State) ->
+resource_exists(Req, _, #{value := {error, not_found}} = State) ->
     {false, Req, State};
-resource_exists(Req, <<"GET">>, #{value := {error, not_leader}} = State) ->
-    %% whoa, we were the leader, but we're not now
-    {stop, service_unavailable(Req), State};
-
-resource_exists(Req, <<"DELETE">>, #{value := #{data := _, metadata := _}} = State) ->
-    {true, Req, State};
-resource_exists(Req, <<"DELETE">>, #{value := {error, not_found}} = State) ->
-    {false, Req, State};
-resource_exists(Req, <<"DELETE">>, #{value := {error, not_leader}} = State) ->
+resource_exists(Req, _, #{value := {error, not_leader}} = State) ->
     %% whoa, we were the leader, but we're not now
     {stop, service_unavailable(Req), State};
 resource_exists(Req, _, State) ->

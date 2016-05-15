@@ -19,6 +19,11 @@ by a key. It also provides a HTTP
 [Server Sent Event Stream](https://en.wikipedia.org/wiki/Server-sent_events)
 of changes to the store.
 
+### CAS
+
+Tansu provides REST interface for simple Check And Set (CAS)
+operations.
+
 ### Locks
 
 Tansu provides test and set operations that can be used to operate
@@ -39,12 +44,24 @@ for i in {1..5}; do
 done
 ```
 
+The following examples use a random Tansu node:
+
+```shell
+RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
+```
+
+You can use the same `${RANDOM_IP}` for each example, or pick a new
+one each time. Tansu will automatically proxy any requests that must
+be handled to the `leader` if necessary (typically, locks, CAS and
+writes are handled by the leader) or can be handled by a `follower`
+(reads are handled directly by followers).
+
+
 ### Key Value Store
 
 Using a random node in the cluster stream changes to the key "hello":
 
 ```shell
-RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
 curl -i -s http://${RANDOM_IP}/api/keys/hello?stream=true
 ```
 
@@ -58,23 +75,21 @@ In another shell assign the value "world" to the key "hello" using a
 random member of the cluster:
 
 ```shell
-RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
-curl -i -s http://${RANDOM_IP}/api/keys/hello -d value=world
+curl -X PUT -i -s http://${RANDOM_IP}/api/keys/hello -d value=world
 ```
 
-The stream will now contain a `set` notification:
+The stream will now contain a `create` notification:
 
 ```json
 id: -576460752303423294
-event: set
-data: {"category":"user","key":"/hello","metadata":{"content_type":"application/x-www-form-urlencoded"},"value":"value=world"}
+event: create
+data: {"category":"user","key":"/hello","metadata":{"content_type":"application/x-www-form-urlencoded"},"value":"world"}
 ```
 
 Or with a content type:
 
 ```shell
-RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
-curl -H "Content-Type: application/json" -i http://${RANDOM_IP}/api/keys/hello --data-binary '{"stuff": true}'
+curl -X PUT -H "Content-Type: application/json" -i http://${RANDOM_IP}/api/keys/hello --data-binary '{"stuff": true}'
 ```
 
 With an update in the stream:
@@ -90,7 +105,6 @@ data: {"category":"user","key":"/hello","metadata":{"content_type":"application/
 Ask a random member of the cluster for the current value of "hello":
 
 ```shell
-RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
 curl -i -s http://${RANDOM_IP}/api/keys/hello
 ```
 
@@ -99,7 +113,6 @@ curl -i -s http://${RANDOM_IP}/api/keys/hello
 Ask a random member of the cluster to delete the key "hello":
 
 ```shell
-RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
 curl -i -X DELETE http://${RANDOM_IP}/api/keys/hello
 ```
 
@@ -107,7 +120,7 @@ The stream now contains a `delete` notification:
 
 ```json
 id: -576460752303423335
-event: deleted
+event: delete
 data: {"category":"user","key":"/hello","metadata":{"content_type":"application/json"},"value":{"stuff":true}}
 ```
 
@@ -117,16 +130,15 @@ A value can also be given a time to live by also supplying a TTL header:
 
 
 ```shell
-RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
-curl -H "Content-Type: application/json" -H "ttl: 10" -i http://${RANDOM_IP}/api/keys/hello --data-binary '{"ephemeral": true}'
+curl -X PUT -H "Content-Type: application/json" -H "ttl: 10" -i http://${RANDOM_IP}/api/keys/hello --data-binary '{"ephemeral": true}'
 ```
 
-The event stream will contain details of the `set` together with a TTL
+The event stream will contain details of the `create` together with a TTL
 attribute:
 
 ```json
 id: -576460752303423262
-event: set
+event: create
 data: {"category":"user","key":"/hello","metadata":{"content_type":"application/json"},"ttl":10,"value":{"ephemeral":true}}
 ```
 
@@ -134,31 +146,28 @@ Ten seconds later when the key is removed:
 
 ```json
 id: -576460752303423238
-event: deleted
-data: {"category":"user","deleted":"{\"ephemeral\": true}","key":"/hello"}
+event: delete
+data: {"category":"user","value":{"ephemeral": true},"key":"/hello"}
 ```
 
 ### Test and Set
 
-Set the value of `/cas/bob` to be `jack` only if that key does not already exist:
+Set the value of `/hello` to be `jack` only if that key does not already exist:
 
 ```shell
-RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
-curl -X PUT -i http://${RANDOM_IP}/api/keys/cas/bob?prevExist=false -d value=jack
+curl -X PUT -i http://${RANDOM_IP}/api/keys/hello?prevExist=false -d value=jack
 ```
 
-Set the value of `/cas/bob` to be `quentin` only if its current value is `jack`:
+Set the value of `/hello` to be `quentin` only if its current value is `jack`:
 
 ```shell
-RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
-curl -X PUT -i http://${RANDOM_IP}/api/keys/cas/bob?prevValue=jack -d value=quentin
+curl -X PUT -i http://${RANDOM_IP}/api/keys/hello?prevValue=jack -d value=quentin
 ```
 
-Delete the value of `/cas/bob` only if its current value is `quentin`:
+Delete the value of `/hello` only if its current value is `quentin`:
 
 ```shell
-RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
-curl -X DELETE -i http://${RANDOM_IP}/api/keys/cas/bob?prevValue=quentin
+curl -X DELETE -i http://${RANDOM_IP}/api/keys/hello?prevValue=quentin
 ```
 
 
@@ -174,17 +183,14 @@ connection.
 In several different shells simultaneously request a lock on "abc":
 
 ```shell
-RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
 curl -i -s http://${RANDOM_IP}/api/locks/abc
 ```
 
 ```shell
-RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
 curl -i -s http://${RANDOM_IP}/api/locks/abc
 ```
 
 ```shell
-RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
 curl -i -s http://${RANDOM_IP}/api/locks/abc
 ```
 
@@ -198,7 +204,6 @@ Tansu provides cluster information via the `/api/info` resource as
 follows, picking a random node:
 
 ```shell
-RANDOM_IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-$(printf %03d $[1 + $[RANDOM % 5]]))
 curl -s http://${RANDOM_IP}/api/info|python -m json.tool
 ```
 
@@ -342,7 +347,7 @@ Fire some updates into one of the remaining nodes (change `tansu-003` to a runni
 IP=$(docker inspect --format={{.NetworkSettings.IPAddress}} tansu-003)
 for i in {0..100};
 do
-    curl -s http://${IP}/api/keys/pqr -d value=$i;
+    curl -X PUT -s http://${IP}/api/keys/pqr -d value=$i;
 done
 ```
 
@@ -387,8 +392,8 @@ curl -i http://${IP}/api/keys/pqr
 
 The node will have same value as the remainder of the cluster:
 
-```json
-value=100
+```text
+100
 ```
 
 ## Configuration
