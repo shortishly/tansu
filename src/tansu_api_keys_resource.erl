@@ -51,7 +51,7 @@ init(Req, <<"GET">>, #{role := follower, leader := _, cluster := _} = Info, QS, 
     %% followers with an established leader and cluster can
     %% handle simple KV GET requests.
     {cowboy_rest,
-     Req,
+     headers(Info, Req),
      #{info => Info,
        path => cowboy_req:path(Req),
        key => key(Req),
@@ -73,7 +73,7 @@ init(Req, _, #{role := follower, connections := Connections, leader := #{id := L
 init(Req, _, #{role := leader} = Info, QS, undefined, undefined) ->
     %% The leader can deal directly with any request.
     {cowboy_rest,
-     Req,
+     headers(Info, Req),
      #{info => Info,
        path => cowboy_req:path(Req),
        key => key(Req),
@@ -83,7 +83,7 @@ init(Req, _, #{role := leader} = Info, QS, undefined, undefined) ->
 init(Req, _, #{role := leader} = Info, QS, undefined, ContentType) ->
     %% The leader can deal directly with any request.
     {cowboy_rest,
-     Req,
+     headers(Info, Req),
      #{info => Info,
        content_type => ContentType,
        path => cowboy_req:path(Req),
@@ -94,7 +94,7 @@ init(Req, _, #{role := leader} = Info, QS, undefined, ContentType) ->
 init(Req, _, #{role := leader} = Info, QS, TTL, undefined) ->
     %% The leader can deal directly with any request.
     {cowboy_rest,
-     Req,
+     headers(Info, Req),
      #{info => Info,
        path => cowboy_req:path(Req),
        ttl => binary_to_integer(TTL),
@@ -105,7 +105,7 @@ init(Req, _, #{role := leader} = Info, QS, TTL, undefined) ->
 init(Req, _, #{role := leader} = Info, QS, TTL, ContentType) ->
     %% The leader can deal directly with any request.
     {cowboy_rest,
-     Req,
+     headers(Info, Req),
      #{info => Info,
        content_type => ContentType,
        path => cowboy_req:path(Req),
@@ -334,3 +334,33 @@ service_unavailable(Req) ->
 
 stop_with_code(Code, Req) ->
     cowboy_req:reply(Code, Req).
+
+headers(Info, Req) ->
+    maps:fold(
+      fun
+          (cluster, Cluster, A) ->
+              cowboy_req:set_resp_header(<<"tansu-cluster-id">>, Cluster, A);
+
+          (commit_index, CI, A) ->
+              cowboy_req:set_resp_header(<<"tansu-raft-ci">>, any:to_binary(CI), A);
+
+          (env, Env, A) ->
+              cowboy_req:set_resp_header(<<"tansu-env">>, Env, A);
+
+          (id, Id, A) ->
+              cowboy_req:set_resp_header(<<"tansu-node-id">>, Id, A);
+
+          (last_applied, LA, A) ->
+              cowboy_req:set_resp_header(<<"tansu-raft-la">>, any:to_binary(LA), A);
+
+          (term, Term, A) ->
+              cowboy_req:set_resp_header(<<"tansu-raft-term">>, any:to_binary(Term), A);
+
+          (role, Role, A) ->
+              cowboy_req:set_resp_header(<<"tansu-role">>, any:to_binary(Role), A);
+
+          (_, _, A) ->
+              A
+      end,
+      Req,
+      Info).
