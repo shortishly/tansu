@@ -1,4 +1,2 @@
 -mnesia dir db
--name tansu@127.0.0.1
--setcookie tansu
 +C multi_time_warp
