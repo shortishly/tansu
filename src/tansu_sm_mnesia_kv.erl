@@ -80,11 +80,17 @@ do_get(Category, Key) ->
     activity(
       fun
           () ->
-                    case mnesia:read(?MODULE, {Category, Key}) of
-                        [#?MODULE{value = Value, metadata = Metadata}] ->
+                    case {mnesia:read(?MODULE, {Category, Key}), calendar:datetime_to_gregorian_seconds(erlang:universaltime())} of
+                        {[#?MODULE{value = Value, expiry = undefined, metadata = Metadata}], _} ->
                             {ok, Value, Metadata};
 
-                        [] ->
+                        {[#?MODULE{value = Value, expiry = Expiry, metadata = Metadata}], Now} when Expiry >= Now ->
+                            {ok, Value, Metadata#{ttl => (Expiry - Now)}};
+
+                        {[#?MODULE{expiry = Expiry}], Now} when Expiry < Now ->
+                            {error, not_found};
+
+                        {[], _} ->
                             {error, not_found}
                     end
       end).
@@ -250,6 +256,7 @@ do_test_and_set(Category, Key, undefined, NewValue, #{parent := Parent, ttl := T
                                             parent = {Category, Parent}}),
                       tansu_sm_mnesia_expiry:set(Category, Key, Expiry),
                       tansu_sm:notify(Category, Key, #{event => create,
+                                                       type => cas,
                                                        ttl => TTL,
                                                        metadata => Metadata,
                                                        value => NewValue}),
@@ -273,6 +280,7 @@ do_test_and_set(Category, Key, undefined, NewValue, #{parent := Parent} = Option
                                             metadata = Metadata,
                                             parent = {Category, Parent}}),
                       tansu_sm:notify(Category, Key, #{event => create,
+                                                       type => cas,
                                                        metadata => Metadata,
                                                        value => NewValue}),
                       {ok, undefined}
@@ -292,6 +300,7 @@ do_test_and_set(Category, Key, undefined, NewValue, Metadata) ->
                                             metadata = Metadata,
                                             value = NewValue}),
                       tansu_sm:notify(Category, Key, #{event => create,
+                                                       type => cas,
                                                        metadata => Metadata,
                                                        value => NewValue}),
                       {ok, undefined}
@@ -315,6 +324,7 @@ do_test_and_set(Category, Key, ExistingValue, NewValue, #{ttl := TTL} = Options)
                                                     expiry = Expiry}),
                       tansu_sm_mnesia_expiry:set(Category, Key, Expiry),
                       tansu_sm:notify(Category, Key, #{event => set,
+                                                       type => cas,
                                                        ttl => TTL,
                                                        metadata => Metadata,
                                                        previous => ExistingValue,
@@ -329,6 +339,7 @@ do_test_and_set(Category, Key, ExistingValue, NewValue, #{ttl := TTL} = Options)
                                                     metadata = Metadata}),
                       tansu_sm_mnesia_expiry:set(Category, Key, Expiry),
                       tansu_sm:notify(Category, Key, #{event => set,
+                                                       type => cas,
                                                        ttl => TTL,
                                                        metadata => Metadata,
                                                        previous => ExistingValue,
@@ -356,6 +367,7 @@ do_test_and_set(Category, Key, ExistingValue, NewValue, Metadata) ->
                                                     metadata = Metadata,
                                                     expiry = undefined}),
                       tansu_sm:notify(Category, Key, #{event => set,
+                                                       type => cas,
                                                        metadata => Metadata,
                                                        previous => ExistingValue,
                                                        value => NewValue}),
@@ -365,6 +377,7 @@ do_test_and_set(Category, Key, ExistingValue, NewValue, Metadata) ->
                       mnesia:write(Existing#?MODULE{value = NewValue,
                                                     metadata = Metadata}),
                       tansu_sm:notify(Category, Key, #{event => set,
+                                                       type => cas,
                                                        metadata => Metadata,
                                                        previous => ExistingValue,
                                                        value => NewValue}),
