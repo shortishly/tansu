@@ -14,7 +14,7 @@
 # limitations under the License.
 #
 PROJECT = tansu
-PROJECT_DESCRIPTION = Tansu
+PROJECT_DESCRIPTION = Tansu distributed key/value and lock store
 PROJECT_VERSION = 0.22.0
 
 DEPS = \
@@ -46,11 +46,9 @@ SHELL_OPTS = \
 	-boot start_sasl \
 	-config dev.config \
 	-mnesia dir db \
-	-name $(PROJECT) \
 	-s $(PROJECT) \
 	-s rb \
-	-s sync \
-	-setcookie $(PROJECT)
+	-s sync
 
 SHELL_DEPS = \
 	sync
