@@ -32,7 +32,7 @@ init(Req, _) ->
       Req,
       cowboy_req:method(Req),
       tansu_consensus:info(),
-      maps:from_list(cowboy_req:parse_qs(Req)),
+      maps:merge(#{<<"role">> => <<"any">>}, maps:from_list(cowboy_req:parse_qs(Req))),
       cowboy_req:header(<<"ttl">>, Req),
       cowboy_req:header(<<"content-type">>, Req)).
 
@@ -41,13 +41,13 @@ init(Req, <<"GET">>, Info, #{<<"stream">> := <<"true">>}, _, _) ->
     %% An event stream can be established with any member of
     %% the cluster.
     Headers = [{<<"content-type">>, <<"text/event-stream">>},
-               {<<"cache-control">>, <<"no-cache">>}],
+               {<<"cache-control">>, <<"no-cache">>} | headers(Info)],
     tansu_api:kv_subscribe(key(Req)),
     {cowboy_loop,
      cowboy_req:chunked_reply(200, Headers, Req),
      #{info => Info}};
 
-init(Req, <<"GET">>, #{role := follower, leader := _, cluster := _} = Info, QS, _, _) ->
+init(Req, <<"GET">>, #{role := follower, leader := _, cluster := _} = Info, #{<<"role">> := <<"any">>} = QS, _, _) ->
     %% followers with an established leader and cluster can
     %% handle simple KV GET requests.
     {cowboy_rest,
@@ -133,39 +133,66 @@ content_types_accepted(Req, #{content_type := <<"application/x-www-form-urlencod
 content_types_accepted(Req, #{content_type := ContentType} = State) ->
     {[{ContentType, from_identity}], Req, State}.
 
+content_types_provided(Req, #{key := Key, qs := #{<<"children">> := <<"true">>}} = State) ->
+    case {tansu_api:kv_get(Key), tansu_api:kv_get_children_of(Key)} of
+        {{ok, Value, Metadata}, Children} when map_size(Children) == 0 ->
+            {[{<<"application/json">>, to_identity}], Req, State#{value => #{data => jsx:encode(#{value => Value, children => #{}}), metadata => Metadata}}};
+        
+        {{ok, ParentValue, #{content_type := <<"application/json">>} = ParentMetadata}, Children} ->
+            {[{<<"application/json">>, to_identity}],
+             Req,
+             State#{value => #{
+                      data => 
+                          jsx:encode(
+                            #{
+                               value => jsx:decode(ParentValue),
+                               children => 
+                                   maps:fold(
+                                     fun
+                                         (Child, {Value, #{content_type := <<"application/json">>} = Metadata}, A) ->
+                                             A#{Child => #{value => jsx:decode(Value), metadata => without_reserved(Metadata)}};
+                                         
+                                         (Child, {Value, Metadata}, A) ->
+                                             A#{Child => #{value => Value, metadata => without_reserved(Metadata)}}
+                                     end,
+                                     #{},
+                                     Children)
+                             }),
+                      metadata => ParentMetadata
+                     }}};
+        
+        {{ok, ParentValue, ParentMetadata}, Children} ->
+            {[{<<"application/json">>, to_identity}],
+             Req,
+             State#{value => #{
+                      data => 
+                          jsx:encode(
+                            #{
+                               value => ParentValue,
+                               children => 
+                                   maps:fold(
+                                     fun
+                                         (Child, {Value, #{content_type := <<"application/json">>} = Metadata}, A) ->
+                                             A#{Child => #{value => jsx:decode(Value), metadata => without_reserved(Metadata)}};
+                                         
+                                         (Child, {Value, Metadata}, A) ->
+                                             A#{Child => #{value => Value, metadata => without_reserved(Metadata)}}
+                                     end,
+                                     #{},
+                                     Children)
+                             }),
+                      metadata => ParentMetadata#{content_type => <<"application/json">>}
+                     }}};
+
+        {{error, _} = Error, _} ->
+            {[{<<"text/plain">>, dummy_to_text_plain}], Req, State#{value => Error}}
+    end;
+
 content_types_provided(Req, #{key := Key} = State) ->
     case tansu_api:kv_get(Key) of
         {ok, Value, #{content_type := ContentType} = Metadata} ->
             {[{ContentType, to_identity}], Req, State#{value => #{data => Value, metadata => Metadata}}};
-        
-        {error, not_found} = Error ->
-            case tansu_api:kv_get_children_of(Key) of
-                Children when map_size(Children) > 0 ->
 
-                    {[{<<"application/json">>, to_identity}],
-                     Req,
-                     State#{value => #{
-                              data => 
-                                  jsx:encode(
-                                    #{
-                                       children => 
-                                           maps:fold(
-                                             fun
-                                                 (Child, {Value, #{content_type := <<"application/json">>} = Metadata}, A) ->
-                                                     A#{Child => #{value => jsx:decode(Value), metadata => without_reserved(Metadata)}};
-                                                 
-                                                 (Child, {Value, Metadata}, A) ->
-                                                     A#{Child => #{value => Value, metadata => without_reserved(Metadata)}}
-                                             end,
-                                             #{},
-                                             Children)
-                                     }),
-                              metadata => #{content_type => <<"application/json">>}
-                             }}};
-                _ ->
-                    {[{<<"text/plain">>, dummy_to_text_plain}], Req, State#{value => Error}}
-            end;
-        
         {error, _} = Error ->
             {[{<<"text/plain">>, dummy_to_text_plain}], Req, State#{value => Error}}
     end.
@@ -174,7 +201,7 @@ without_reserved(Metadata) ->
     maps:without(reserved(), Metadata).
 
 reserved() ->
-    [content_type, parent, ttl].
+    [parent, ttl].
 
 to_identity(Req, #{value := #{data := Data}} = State) ->
     {Data, Req, State}.
@@ -198,14 +225,19 @@ slash_separated(PathInfo) ->
       <<>>,
       PathInfo).
 
-from_form_urlencoded(Req0, State) ->
-    case cowboy_req:body_qs(Req0) of
-        {ok, KVS, Req1} ->
-            from_form_url_encoded(Req1, maps:from_list(KVS), State);
+from_form_urlencoded(Req, State) ->
+    case cowboy_req:has_body(Req) of
+        true ->
+            from_form_urlencoded_body(cowboy_req:body(Req), <<>>, State);
 
-        _ ->
-            {stop, bad_request(Req0), State}
+        false ->
+            {stop, bad_request(Req), State}
     end.
+
+from_form_urlencoded_body({ok, Remainder, Req}, Partial, State) ->
+    from_form_url_encoded(Req, maps:from_list(cow_qs:parse_qs(<<Partial/bytes, Remainder/bytes>>)), State);
+from_form_urlencoded_body({more, Remainder, Req}, Partial, State) ->
+    from_form_urlencoded_body(cowboy_req:body(Req), <<Partial/bytes, Remainder/bytes>>, State).
 
 from_form_url_encoded(Req, #{<<"value">> := Value}, State) ->
     from_identity({ok, Value, Req}, <<>>, State).
@@ -254,8 +286,7 @@ kv_test_and_set(Req, Key, ExistingValue, NewValue, State) ->
            maps:with([content_type, parent, ttl], State)) of
 
         {ok, _} ->
-            {true, Req, State};
-
+            {true, add_ttl(Req, State), State};
 
         error ->
             {stop, conflict(Req), State};
@@ -267,11 +298,17 @@ kv_test_and_set(Req, Key, ExistingValue, NewValue, State) ->
 kv_set(Req, Key, Value, State) ->
     case tansu_api:kv_set(Key, Value, maps:with([content_type, parent, ttl], State)) of
         {ok, _} ->
-            {true, Req, State};
+            {true, add_ttl(Req, State), State};
         
         {error, not_leader} ->
             {stop, service_unavailable(Req), State}
     end.
+
+add_ttl(Req, #{ttl := TTL}) ->
+    cowboy_req:set_resp_header(<<"ttl">>, any:to_binary(TTL), Req);    
+add_ttl(Req, _) ->
+    Req.
+
 
 delete_resource(Req, #{qs := #{<<"prevValue">> := ExistingValue}, key := Key} = State) ->
     case tansu_api:kv_test_and_delete(Key, ExistingValue) of
@@ -295,6 +332,8 @@ delete_resource(Req, #{key := Key} = State) ->
 resource_exists(Req, State) ->
     resource_exists(Req, cowboy_req:method(Req), State).
 
+resource_exists(Req, _, #{value := #{data := _, metadata := #{ttl := TTL}}} = State) ->
+    {true, cowboy_req:set_resp_header(<<"ttl">>, any:to_binary(TTL), Req), State};
 resource_exists(Req, _, #{value := #{data := _, metadata := _}} = State) ->
     {true, Req, State};
 resource_exists(Req, _, #{value := {error, not_found}} = State) ->
@@ -336,31 +375,41 @@ stop_with_code(Code, Req) ->
     cowboy_req:reply(Code, Req).
 
 headers(Info, Req) ->
+    lists:foldl(
+      fun
+          ({Key, Value}, A) ->
+              cowboy_req:set_resp_header(Key, Value, A)
+      end,
+      Req,
+      headers(Info)).
+
+headers(Info) ->
     maps:fold(
       fun
           (cluster, Cluster, A) ->
-              cowboy_req:set_resp_header(<<"tansu-cluster-id">>, Cluster, A);
+              [{<<"tansu-cluster-id">>, Cluster} |  A];
 
           (commit_index, CI, A) ->
-              cowboy_req:set_resp_header(<<"tansu-raft-ci">>, any:to_binary(CI), A);
+              [{<<"tansu-raft-ci">>, any:to_binary(CI)} |  A];
 
           (env, Env, A) ->
-              cowboy_req:set_resp_header(<<"tansu-env">>, Env, A);
+              [{<<"tansu-env">>, Env} |  A];
 
           (id, Id, A) ->
-              cowboy_req:set_resp_header(<<"tansu-node-id">>, Id, A);
+              [{<<"tansu-node-id">>, Id} | A];
 
           (last_applied, LA, A) ->
-              cowboy_req:set_resp_header(<<"tansu-raft-la">>, any:to_binary(LA), A);
+              [{<<"tansu-raft-la">>, any:to_binary(LA)} |  A];
 
           (term, Term, A) ->
-              cowboy_req:set_resp_header(<<"tansu-raft-term">>, any:to_binary(Term), A);
+              [{<<"tansu-raft-term">>, any:to_binary(Term)} | A];
 
           (role, Role, A) ->
-              cowboy_req:set_resp_header(<<"tansu-role">>, any:to_binary(Role), A);
+              [{<<"tansu-role">>, any:to_binary(Role)} |  A];
 
           (_, _, A) ->
               A
       end,
-      Req,
+      [],
       Info).
+    

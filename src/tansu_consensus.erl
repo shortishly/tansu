@@ -145,7 +145,7 @@ sync_send_all_state_event(Event) ->
 
 init([]) ->
     Id = tansu_ps:id(),
-    %% subscribe to mDNS advertisements if we are can mesh
+    %% subscribe to mDNS advertisements if we can mesh
     _ = [mdns:subscribe(advertisement) || tansu_config:can(mesh)],
     {ok, follower, do_call_election_after_timeout(
                      do_voted_for(
