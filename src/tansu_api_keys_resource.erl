@@ -32,7 +32,7 @@ init(Req, _) ->
       Req,
       cowboy_req:method(Req),
       tansu_consensus:info(),
-      maps:from_list(cowboy_req:parse_qs(Req)),
+      maps:merge(#{<<"role">> => <<"any">>}, maps:from_list(cowboy_req:parse_qs(Req))),
       cowboy_req:header(<<"ttl">>, Req),
       cowboy_req:header(<<"content-type">>, Req)).
 
@@ -47,7 +47,7 @@ init(Req, <<"GET">>, Info, #{<<"stream">> := <<"true">>}, _, _) ->
      cowboy_req:chunked_reply(200, Headers, Req),
      #{info => Info}};
 
-init(Req, <<"GET">>, #{role := follower, leader := _, cluster := _} = Info, QS, _, _) ->
+init(Req, <<"GET">>, #{role := follower, leader := _, cluster := _} = Info, #{<<"role">> := <<"any">>} = QS, _, _) ->
     %% followers with an established leader and cluster can
     %% handle simple KV GET requests.
     {cowboy_rest,
@@ -135,8 +135,8 @@ content_types_accepted(Req, #{content_type := ContentType} = State) ->
 
 content_types_provided(Req, #{key := Key, qs := #{<<"children">> := <<"true">>}} = State) ->
     case {tansu_api:kv_get(Key), tansu_api:kv_get_children_of(Key)} of
-        {{ok, Value, #{content_type := ContentType} = Metadata}, Children} when map_size(Children) == 0 ->
-            {[{ContentType, to_identity}], Req, State#{value => #{data => jsx:encode(#{value => Value, children => #{}}), metadata => Metadata}}};
+        {{ok, Value, Metadata}, Children} when map_size(Children) == 0 ->
+            {[{<<"application/json">>, to_identity}], Req, State#{value => #{data => jsx:encode(#{value => Value, children => #{}}), metadata => Metadata}}};
         
         {{ok, ParentValue, #{content_type := <<"application/json">>} = ParentMetadata}, Children} ->
             {[{<<"application/json">>, to_identity}],
