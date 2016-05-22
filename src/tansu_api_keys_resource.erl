@@ -209,21 +209,23 @@ without_reserved(Metadata) ->
 reserved() ->
     [parent, ttl].
 
-to_identity(Req, #{value := #{data := Data, metadata := Metadata}} = State) ->
-    {Data, add_metadata_headers(Req, Metadata), State}.
+to_identity(Req, #{value := #{data := Data, metadata := #{tansu := Tansu}}} = State) ->
+    {Data, add_metadata_headers(Req, Tansu), State}.
 
-add_metadata_headers(Req, #{tansu := Tansu}) ->
+add_metadata_headers(Req, Metadata) ->
     maps:fold(
       fun
           (created, Index, A) ->
               cowboy_req:set_resp_header(<<"created-index">>, any:to_binary(Index), A);
           (updated, Index, A) ->
               cowboy_req:set_resp_header(<<"updated-index">>, any:to_binary(Index), A);
+          (ttl, TTL, A) ->
+              cowboy_req:set_resp_header(<<"ttl">>, any:to_binary(TTL), A);
           (_, _, A) ->
               A
       end,
       Req,
-      Tansu).
+      Metadata).
 
 key(Req) ->
     slash_separated(cowboy_req:path_info(Req)).
@@ -304,13 +306,13 @@ kv_test_and_set(Req, Key, ExistingValue, NewValue, State) ->
            NewValue,
            #{tansu => maps:with([content_type, parent, ttl], State)}) of
 
-        {ok, Detail} ->
+        {ok, #{current := Current} = Detail} ->
             {true,
-             add_ttl(
+             add_metadata_headers(
                cowboy_req:set_resp_body(
                  jsx:encode(Detail),
                  Req),
-               State),
+               Current),
              State};
 
         error ->
@@ -326,24 +328,18 @@ kv_set(Req, Key, Value, State) ->
            Value,
            #{tansu => maps:with([content_type, parent, ttl], State)}) of
 
-        {ok, Detail} ->
+        {ok, #{current := Current} = Detail} ->
             {true,
-             add_ttl(
+             add_metadata_headers(
                cowboy_req:set_resp_body(
                  jsx:encode(Detail),
                  Req),
-               State),
+               Current),
              State};
         
         {error, not_leader} ->
             {stop, service_unavailable(Req), State}
     end.
-
-add_ttl(Req, #{ttl := TTL}) ->
-    cowboy_req:set_resp_header(<<"ttl">>, any:to_binary(TTL), Req);    
-add_ttl(Req, _) ->
-    Req.
-
 
 delete_resource(Req, #{qs := #{<<"prevValue">> := ExistingValue}, key := Key} = State) ->
     case tansu_api:kv_test_and_delete(Key, ExistingValue) of
