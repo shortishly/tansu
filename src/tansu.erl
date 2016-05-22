@@ -26,7 +26,7 @@ ensure_loaded() ->
     lists:foreach(fun code:ensure_loaded/1, modules()).
 
 modules() ->
-    modules(?MODULE) ++ modules(cowboy) ++ modules(gun) ++ modules(ranch).
+    modules(?MODULE).
 
 modules(Application) ->
     {ok, Modules} = application:get_key(Application, modules),
