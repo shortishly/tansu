@@ -190,7 +190,7 @@ content_types_provided(Req, #{key := Key, qs := #{<<"children">> := <<"true">>}}
 
 content_types_provided(Req, #{key := Key} = State) ->
     case tansu_api:kv_get(Key) of
-        {ok, Value, #{content_type := ContentType} = Metadata} ->
+        {ok, Value, #{tansu := #{content_type := ContentType}} = Metadata} ->
             {[{ContentType, to_identity}], Req, State#{value => #{data => Value, metadata => Metadata}}};
 
         {error, _} = Error ->
@@ -203,8 +203,21 @@ without_reserved(Metadata) ->
 reserved() ->
     [parent, ttl].
 
-to_identity(Req, #{value := #{data := Data}} = State) ->
-    {Data, Req, State}.
+to_identity(Req, #{value := #{data := Data, metadata := Metadata}} = State) ->
+    {Data, add_metadata_headers(Req, Metadata), State}.
+
+add_metadata_headers(Req, #{tansu := Tansu}) ->
+    maps:fold(
+      fun
+          (created, Index, A) ->
+              cowboy_req:set_resp_header(<<"created-index">>, any:to_binary(Index), A);
+          (updated, Index, A) ->
+              cowboy_req:set_resp_header(<<"updated-index">>, any:to_binary(Index), A);
+          (_, _, A) ->
+              A
+      end,
+      Req,
+      Tansu).
 
 key(Req) ->
     slash_separated(cowboy_req:path_info(Req)).
@@ -283,7 +296,7 @@ kv_test_and_set(Req, Key, ExistingValue, NewValue, State) ->
            Key,
            ExistingValue,
            NewValue,
-           maps:with([content_type, parent, ttl], State)) of
+           #{tansu => maps:with([content_type, parent, ttl], State)}) of
 
         {ok, _} ->
             {true, add_ttl(Req, State), State};
@@ -296,7 +309,10 @@ kv_test_and_set(Req, Key, ExistingValue, NewValue, State) ->
     end.
 
 kv_set(Req, Key, Value, State) ->
-    case tansu_api:kv_set(Key, Value, maps:with([content_type, parent, ttl], State)) of
+    case tansu_api:kv_set(
+           Key,
+           Value,
+           #{tansu => maps:with([content_type, parent, ttl], State)}) of
         {ok, _} ->
             {true, add_ttl(Req, State), State};
         
@@ -345,7 +361,7 @@ resource_exists(Req, _, State) ->
     {true, Req, State}.
 
 
-info(#{id := Id, event := Event, data := #{metadata := #{content_type := <<"application/json">>}, value := Value} = Data, module := tansu_sm}, Req, State) ->
+info(#{id := Id, event := Event, data := #{metadata := #{tansu := #{content_type := <<"application/json">>}}, value := Value} = Data, module := tansu_sm}, Req, State) ->
     {tansu_stream:chunk(Id, Event, Data#{value := jsx:decode(Value)}, Req), Req, State};
 
 info(#{id := Id, event := Event, data := Data, module := tansu_sm}, Req, State) ->
@@ -387,25 +403,25 @@ headers(Info) ->
     maps:fold(
       fun
           (cluster, Cluster, A) ->
-              [{<<"tansu-cluster-id">>, Cluster} |  A];
+              [{<<"cluster-id">>, Cluster} |  A];
 
           (commit_index, CI, A) ->
-              [{<<"tansu-raft-ci">>, any:to_binary(CI)} |  A];
+              [{<<"raft-ci">>, any:to_binary(CI)} |  A];
 
           (env, Env, A) ->
-              [{<<"tansu-env">>, Env} |  A];
+              [{<<"env">>, Env} |  A];
 
           (id, Id, A) ->
-              [{<<"tansu-node-id">>, Id} | A];
+              [{<<"node-id">>, Id} | A];
 
           (last_applied, LA, A) ->
-              [{<<"tansu-raft-la">>, any:to_binary(LA)} |  A];
+              [{<<"raft-la">>, any:to_binary(LA)} |  A];
 
           (term, Term, A) ->
-              [{<<"tansu-raft-term">>, any:to_binary(Term)} | A];
+              [{<<"raft-term">>, any:to_binary(Term)} | A];
 
           (role, Role, A) ->
-              [{<<"tansu-role">>, any:to_binary(Role)} |  A];
+              [{<<"role">>, any:to_binary(Role)} |  A];
 
           (_, _, A) ->
               A

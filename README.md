@@ -19,7 +19,7 @@ by a key. It also provides a HTTP
 [Server Sent Event Stream](https://en.wikipedia.org/wiki/Server-sent_events)
 of changes to the store.
 
-### CAS
+### Check And Set
 
 Tansu provides REST interface for simple Check And Set (CAS)
 operations.
