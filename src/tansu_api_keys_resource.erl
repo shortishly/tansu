@@ -189,11 +189,17 @@ content_types_provided(Req, #{key := Key, qs := #{<<"children">> := <<"true">>}}
     end;
 
 content_types_provided(Req, #{key := Key} = State) ->
-    case tansu_api:kv_get(Key) of
-        {ok, Value, #{tansu := #{content_type := ContentType}} = Metadata} ->
+    case {cowboy_req:method(Req), tansu_api:kv_get(Key)} of
+        {<<"PUT">>, {ok, Value, Metadata}} ->
+            {[{<<"application/json">>, to_identity}], Req, State#{value => #{data => Value, metadata => Metadata}}};
+
+        {_, {ok, Value, #{tansu := #{content_type := ContentType}} = Metadata}} ->
             {[{ContentType, to_identity}], Req, State#{value => #{data => Value, metadata => Metadata}}};
 
-        {error, _} = Error ->
+        {<<"PUT">>, {error, _}} = Error ->
+            {[{<<"application/json">>, dummy_to_text_plain}], Req, State#{value => Error}};
+
+        {_, {error, _} = Error} ->
             {[{<<"text/plain">>, dummy_to_text_plain}], Req, State#{value => Error}}
     end.
 
@@ -298,8 +304,14 @@ kv_test_and_set(Req, Key, ExistingValue, NewValue, State) ->
            NewValue,
            #{tansu => maps:with([content_type, parent, ttl], State)}) of
 
-        {ok, _} ->
-            {true, add_ttl(Req, State), State};
+        {ok, Detail} ->
+            {true,
+             add_ttl(
+               cowboy_req:set_resp_body(
+                 jsx:encode(Detail),
+                 Req),
+               State),
+             State};
 
         error ->
             {stop, conflict(Req), State};
@@ -313,8 +325,15 @@ kv_set(Req, Key, Value, State) ->
            Key,
            Value,
            #{tansu => maps:with([content_type, parent, ttl], State)}) of
-        {ok, _} ->
-            {true, add_ttl(Req, State), State};
+
+        {ok, Detail} ->
+            {true,
+             add_ttl(
+               cowboy_req:set_resp_body(
+                 jsx:encode(Detail),
+                 Req),
+               State),
+             State};
         
         {error, not_leader} ->
             {stop, service_unavailable(Req), State}

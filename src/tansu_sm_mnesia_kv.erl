@@ -181,19 +181,16 @@ do_set(Category, Key, Value, Metadata) ->
                         Category,
                         create,
                         #{key => Key,
-                          value => Value,
-                          metadata => Metadata},
+                          value => Value},
                         Metadata,
                         undefined);
 
-                  #?MODULE{created = Created,
-                           value = PreviousValue} ->
+                  #?MODULE{created = Created} = PreviousValue ->
                       write_tx(
                         Category,
                         set,
                         #{key => Key,
                           value => Value,
-                          metadata => Metadata,
                           created => Created},
                         Metadata,
                         PreviousValue)
@@ -227,7 +224,7 @@ do_test_and_set(Category, Key, ExistingValue, NewValue, Metadata) ->
           () ->
               case mnesia:read(?MODULE, {Category, Key}) of
                   [#?MODULE{created = Created,
-                            value = ExistingValue}] ->
+                            value = ExistingValue} = Previous] ->
                       cancel_expiry(Category, Key),
                       write_tx(
                         Category,
@@ -236,7 +233,7 @@ do_test_and_set(Category, Key, ExistingValue, NewValue, Metadata) ->
                           created => Created,
                           value => NewValue},
                         Metadata,
-                        ExistingValue,
+                        Previous,
                         #{type => cas});
 
                   [#?MODULE{}] ->
@@ -268,11 +265,18 @@ do_test_and_delete(Category, Key, ExistingValue) ->
 write_tx(Category, Event, KV, Metadata, PreviousValue) ->
     write_tx(Category, Event, KV, Metadata, PreviousValue, #{}).
 
-write_tx(Category, Event, KV, Metadata, PreviousValue, Commentary) ->
+write_tx(Category, Event, #{value := NewValue} = KV, Metadata, #?MODULE{value = PreviousValue} = ExistingValue, Commentary) ->
     Record = integrate_metadata(to_record(Category, KV), Metadata),
     mnesia:write(Record),
     notification(Event, Record, PreviousValue, Commentary),
-    {ok, PreviousValue}.
+    {ok, #{previous => metadata_from_record(ExistingValue, #{value => PreviousValue}),
+           current => metadata_from_record(Record, Commentary#{value => NewValue})}};
+
+write_tx(Category, Event, #{value := NewValue} = KV, Metadata, undefined = PreviousValue, Commentary) ->
+    Record = integrate_metadata(to_record(Category, KV), Metadata),
+    mnesia:write(Record),
+    notification(Event, Record, PreviousValue, Commentary),
+    {ok, #{current => metadata_from_record(Record, Commentary#{value => NewValue})}}.
 
 integrate_metadata(#?MODULE{key = {Category, Key}} = KV, Metadata) ->
     maps:fold(
