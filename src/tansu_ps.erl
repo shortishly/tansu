@@ -61,7 +61,7 @@ term(Id) ->
                   [#?MODULE{term = CurrentTerm}] ->
                       CurrentTerm;
                   [] ->
-                      error(badarg, Id)
+                      error(badarg, [Id])
               end
       end).
 
@@ -74,13 +74,13 @@ term(Id, New) ->
                       New;
 
                   [#?MODULE{term = Current}] when New < Current ->
-                      error(badarg, Id);
+                      error(badarg, [Id]);
 
                   [#?MODULE{term = Current}] ->
                       Current;
 
                   [] ->
-                      error(badarg, Id)
+                      error(badarg, [Id])
               end
       end).
 
