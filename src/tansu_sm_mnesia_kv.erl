@@ -20,6 +20,7 @@
 -export([ckv_set/5]).
 -export([ckv_test_and_delete/4]).
 -export([ckv_test_and_set/6]).
+-export([current/2]).
 -export([expired/1]).
 -export([install_snapshot/3]).
 -export([new/0]).
@@ -81,6 +82,10 @@ snapshot(Name, LastApplied, ?MODULE = StateMachine) ->
 install_snapshot(Name, Data, ?MODULE = StateMachine) ->
     {do_install_snapshot(Name, Data), StateMachine}.
 
+current(Metric, StateMachine) ->
+    {do_current(Metric), StateMachine}.
+    
+
 do_get(Category, Key) ->
     activity(
       fun
@@ -140,10 +145,11 @@ recursive_remove(ParentCategory, ParentKey) ->
                 id => TxId,
                 value => Value,
                 metadata => Metadata#{tansu => metadata_from_record(Record#?MODULE{updated = TxId})}}),
-            {ok, Value};
+            {ok, Value, Metadata#{tansu => #{current => metadata_from_record(Record#?MODULE{updated = TxId}),
+                                             previous => metadata_from_record(Record)}}};
 
         [] ->
-            {ok, undefined}
+            {ok, undefined, #{}}
     end.
 
 
@@ -197,6 +203,33 @@ do_set(Category, Key, Value, Metadata) ->
               end
       end).
 
+
+do_test_and_set(Category, Key, undefined, NewValue, #{tansu := #{updated := Index}} = Metadata) ->
+    activity(
+      fun
+          () ->
+              case mnesia:read(?MODULE, {Category, Key}) of
+                  [#?MODULE{created = Created,
+                            updated = Index} = ExistingValue] ->
+                      cancel_expiry(Category, Key),
+                      write_tx(
+                        Category,
+                        set,
+                        #{key => Key,
+                          created => Created,
+                          value => NewValue},
+                        Metadata,
+                        ExistingValue,
+                        #{type => cas});
+
+                  [#?MODULE{}] ->
+                      %% Not the value that we were expecting.
+                      error;
+
+                  [] ->
+                      error
+              end
+      end);
 
 do_test_and_set(Category, Key, undefined, NewValue, Metadata) ->
     activity(
@@ -269,14 +302,14 @@ write_tx(Category, Event, #{value := NewValue} = KV, Metadata, #?MODULE{value = 
     Record = integrate_metadata(to_record(Category, KV), Metadata),
     mnesia:write(Record),
     notification(Event, Record, PreviousValue, Commentary),
-    {ok, #{previous => metadata_from_record(ExistingValue, #{value => PreviousValue}),
-           current => metadata_from_record(Record, Commentary#{value => NewValue})}};
+    {ok, NewValue, Metadata#{tansu => #{previous => metadata_from_record(ExistingValue, #{value => PreviousValue}),
+                                        current => metadata_from_record(Record)}}};
 
 write_tx(Category, Event, #{value := NewValue} = KV, Metadata, undefined = PreviousValue, Commentary) ->
     Record = integrate_metadata(to_record(Category, KV), Metadata),
     mnesia:write(Record),
     notification(Event, Record, PreviousValue, Commentary),
-    {ok, #{current => metadata_from_record(Record, Commentary#{value => NewValue})}}.
+    {ok, NewValue, Metadata#{tansu => #{current => metadata_from_record(Record)}}}.
 
 integrate_metadata(#?MODULE{key = {Category, Key}} = KV, Metadata) ->
     maps:fold(
@@ -485,3 +518,6 @@ do_expired() ->
 
 activity(F) ->
     mnesia:activity(transaction, F).
+
+do_current(index) ->
+    tansu_sm_mnesia_tx:current().

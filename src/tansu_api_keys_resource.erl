@@ -274,6 +274,14 @@ from_identity({ok, Final, Req}, Partial, #{qs := #{<<"prevExist">> := <<"false">
       <<Partial/binary, Final/binary>>,
       State#{content_type := <<"text/plain">>});
 
+from_identity({ok, Final, Req}, Partial, #{qs := #{<<"prevIndex">> := Updated}, key := Key, content_type := <<"application/x-www-form-urlencoded">>} = State) ->
+    kv_test_and_set(
+      Req,
+      Key,
+      undefined,
+      <<Partial/binary, Final/binary>>,
+      State#{content_type := <<"text/plain">>, updated => any:to_integer(Updated)});
+
 from_identity({ok, Final, Req}, Partial, #{qs := #{<<"prevValue">> := ExistingValue}, key := Key, content_type := <<"application/x-www-form-urlencoded">>} = State) ->
     kv_test_and_set(
       Req,
@@ -304,15 +312,15 @@ kv_test_and_set(Req, Key, ExistingValue, NewValue, State) ->
            Key,
            ExistingValue,
            NewValue,
-           #{tansu => maps:with([content_type, parent, ttl], State)}) of
+           #{tansu => maps:with([content_type, parent, ttl, updated], State)}) of
 
-        {ok, #{current := Current} = Detail} ->
+        {ok, Current, #{tansu := Tansu} = Metadata} ->
             {true,
              add_metadata_headers(
                cowboy_req:set_resp_body(
-                 jsx:encode(Detail),
+                 jsx:encode(#{value => Current, metadata => Metadata}),
                  Req),
-               Current),
+               Tansu),
              State};
 
         error ->
@@ -328,23 +336,29 @@ kv_set(Req, Key, Value, State) ->
            Value,
            #{tansu => maps:with([content_type, parent, ttl], State)}) of
 
-        {ok, #{current := Current} = Detail} ->
+        {ok, Current, #{tansu := #{current := Tansu}} = Metadata} ->
             {true,
              add_metadata_headers(
                cowboy_req:set_resp_body(
-                 jsx:encode(Detail),
+                 jsx:encode(#{value => Current, metadata => Metadata}),
                  Req),
-               Current),
+               Tansu),
              State};
-        
+
         {error, not_leader} ->
             {stop, service_unavailable(Req), State}
     end.
 
 delete_resource(Req, #{qs := #{<<"prevValue">> := ExistingValue}, key := Key} = State) ->
     case tansu_api:kv_test_and_delete(Key, ExistingValue) of
-        {ok, _} ->
-            {true, Req, State};
+        {ok, Current, #{tansu := #{current := Tansu}} = Metadata} ->
+            {true,
+             add_metadata_headers(
+               cowboy_req:set_resp_body(
+                 jsx:encode(#{value => Current, metadata => Metadata}),
+                 Req),
+               Tansu),
+             State};
 
         error ->
             {stop, conflict(Req), State}
@@ -352,8 +366,14 @@ delete_resource(Req, #{qs := #{<<"prevValue">> := ExistingValue}, key := Key} = 
 
 delete_resource(Req, #{key := Key} = State) ->
     case tansu_api:kv_delete(Key) of
-        {ok, _} ->
-            {true, Req, State};
+        {ok, Current, #{tansu := #{current := Tansu}} = Metadata} ->
+            {true,
+             add_metadata_headers(
+               cowboy_req:set_resp_body(
+                 jsx:encode(#{value => Current, metadata => Metadata}),
+                 Req),
+               Tansu),
+             State};
 
         error ->
             {false, Req, State}
@@ -363,7 +383,7 @@ delete_resource(Req, #{key := Key} = State) ->
 resource_exists(Req, State) ->
     resource_exists(Req, cowboy_req:method(Req), State).
 
-resource_exists(Req, _, #{value := #{data := _, metadata := #{ttl := TTL}}} = State) ->
+resource_exists(Req, _, #{value := #{data := _, metadata := #{tansu := #{ttl := TTL}}}} = State) ->
     {true, cowboy_req:set_resp_header(<<"ttl">>, any:to_binary(TTL), Req), State};
 resource_exists(Req, _, #{value := #{data := _, metadata := _}} = State) ->
     {true, Req, State};
@@ -428,6 +448,9 @@ headers(Info) ->
 
           (id, Id, A) ->
               [{<<"node-id">>, Id} | A];
+
+          (index, Index, A) ->
+              [{<<"index">>, any:to_binary(Index)} | A];
 
           (last_applied, LA, A) ->
               [{<<"raft-la">>, any:to_binary(LA)} |  A];
