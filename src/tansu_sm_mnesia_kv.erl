@@ -298,6 +298,13 @@ do_test_and_delete(Category, Key, ExistingValue) ->
 write_tx(Category, Event, KV, Metadata, PreviousValue) ->
     write_tx(Category, Event, KV, Metadata, PreviousValue, #{}).
 
+write_tx(Category, Event, #{value := NewValue} = KV, Metadata, #?MODULE{value = PreviousValue, content_type = <<"application/json">>} = ExistingValue, Commentary) ->
+    Record = integrate_metadata(to_record(Category, KV), Metadata),
+    mnesia:write(Record),
+    notification(Event, Record, PreviousValue, Commentary),
+    {ok, NewValue, Metadata#{tansu => #{previous => metadata_from_record(ExistingValue, #{value => jsx:decode(PreviousValue)}),
+                                        current => metadata_from_record(Record)}}};
+
 write_tx(Category, Event, #{value := NewValue} = KV, Metadata, #?MODULE{value = PreviousValue} = ExistingValue, Commentary) ->
     Record = integrate_metadata(to_record(Category, KV), Metadata),
     mnesia:write(Record),

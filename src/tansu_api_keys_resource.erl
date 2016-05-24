@@ -314,7 +314,16 @@ kv_test_and_set(Req, Key, ExistingValue, NewValue, State) ->
            NewValue,
            #{tansu => maps:with([content_type, parent, ttl, updated], State)}) of
 
-        {ok, Current, #{tansu := Tansu} = Metadata} ->
+        {ok, Current, #{tansu := #{current := #{content_type := <<"application/json">>}} = Tansu} = Metadata} ->
+            {true,
+             add_metadata_headers(
+               cowboy_req:set_resp_body(
+                 jsx:encode(#{value => jsx:decode(Current), metadata => Metadata}),
+                 Req),
+               Tansu),
+             State};
+
+        {ok, Current, #{tansu := #{current := Tansu}} = Metadata} ->
             {true,
              add_metadata_headers(
                cowboy_req:set_resp_body(
@@ -336,6 +345,15 @@ kv_set(Req, Key, Value, State) ->
            Value,
            #{tansu => maps:with([content_type, parent, ttl], State)}) of
 
+        {ok, Current, #{tansu := #{current := #{content_type := <<"application/json">>}} = Tansu} = Metadata} ->
+            {true,
+             add_metadata_headers(
+               cowboy_req:set_resp_body(
+                 jsx:encode(#{value => jsx:decode(Current), metadata => Metadata}),
+                 Req),
+               Tansu),
+             State};
+
         {ok, Current, #{tansu := #{current := Tansu}} = Metadata} ->
             {true,
              add_metadata_headers(
@@ -351,6 +369,15 @@ kv_set(Req, Key, Value, State) ->
 
 delete_resource(Req, #{qs := #{<<"prevValue">> := ExistingValue}, key := Key} = State) ->
     case tansu_api:kv_test_and_delete(Key, ExistingValue) of
+        {ok, Current, #{tansu := #{current := #{content_type := <<"application/json">>}} = Tansu} = Metadata} ->
+            {true,
+             add_metadata_headers(
+               cowboy_req:set_resp_body(
+                 jsx:encode(#{value => jsx:decode(Current), metadata => Metadata}),
+                 Req),
+               Tansu),
+             State};
+
         {ok, Current, #{tansu := #{current := Tansu}} = Metadata} ->
             {true,
              add_metadata_headers(
@@ -366,6 +393,15 @@ delete_resource(Req, #{qs := #{<<"prevValue">> := ExistingValue}, key := Key} = 
 
 delete_resource(Req, #{key := Key} = State) ->
     case tansu_api:kv_delete(Key) of
+        {ok, Current, #{tansu := #{current := #{content_type := <<"application/json">>}} = Tansu} = Metadata} ->
+            {true,
+             add_metadata_headers(
+               cowboy_req:set_resp_body(
+                 jsx:encode(#{value => jsx:decode(Current), metadata => Metadata}),
+                 Req),
+               Tansu),
+             State};
+
         {ok, Current, #{tansu := #{current := Tansu}} = Metadata} ->
             {true,
              add_metadata_headers(
