@@ -17,6 +17,7 @@
 -export([acceptors/1]).
 -export([batch_size/1]).
 -export([can/1]).
+-export([cluster/1]).
 -export([db_schema/0]).
 -export([directory/1]).
 -export([enabled/1]).
@@ -39,6 +40,9 @@ can(discover) ->
     envy(to_boolean, can_discover, true);
 can(mesh) ->
     envy(to_boolean, can_mesh, true).
+
+cluster(members) ->
+    envy(to_list, cluster_members, "").
 
 directory(snapshot) ->
     envy(to_list, snapshot_directory, "/snapshots").
