@@ -98,7 +98,7 @@ do_try_lock(Req, #{lock := Lock, key := Key, n := N} = State) ->
             tansu_stream:chunk(N, not_granted, #{service_unavailable => not_leader}, Req),
             {stop, Req, State#{n := N+1}};
 
-        {ok, _} ->
+        {ok, _Value, _Metadata} ->
             tansu_stream:chunk(N, granted, Req),
             {ok, Req, State#{n := N+1}};
 

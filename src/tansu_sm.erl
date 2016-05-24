@@ -28,6 +28,7 @@
 -export([snapshot/3]).
 -export([subscribe/2]).
 -export([unsubscribe/2]).
+-export([current/2]).
 
 
 -type state_machine() :: any().
@@ -118,6 +119,9 @@ snapshot(Name, LastApplied, StateMachine) ->
 install_snapshot(Name, Data, StateMachine) ->
     (tansu_config:sm()):install_snapshot(Name, Data, StateMachine).
 
+current(Metric, StateMachine) ->
+    (tansu_config:sm()):current(Metric, StateMachine).
+
 subscribe(Category, Key) ->
     gproc:reg(key(Category, Key)).
 
@@ -151,3 +155,4 @@ key(Category, Key) ->
     
 goodbye() ->
     gproc:goodbye().
+

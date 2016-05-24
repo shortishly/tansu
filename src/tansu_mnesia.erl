@@ -13,6 +13,7 @@
 %% limitations under the License.
 
 -module(tansu_mnesia).
+-export([activity/1]).
 -export([create_table/2]).
 
 -spec create_table(Table :: atom(), Options :: list()) -> ok | {error, Reason :: atom()} | {timeout, Tables :: list(atom())}.
@@ -45,4 +46,5 @@ create_table(Table, Options) ->
             {error, Reason}
     end.
 
-    
+activity(F) ->
+    mnesia:activity(transaction, F).
