@@ -32,12 +32,15 @@ init(Req, _) ->
       Req,
       cowboy_req:method(Req),
       tansu_consensus:info(),
-      maps:merge(#{<<"role">> => <<"any">>}, maps:from_list(cowboy_req:parse_qs(Req))),
+      maps:merge(
+        #{<<"role">> => <<"any">>,
+          <<"children">> => <<"false">>},
+        maps:from_list(cowboy_req:parse_qs(Req))),
       cowboy_req:header(<<"ttl">>, Req),
       cowboy_req:header(<<"content-type">>, Req)).
 
 
-init(Req, <<"GET">>, Info, #{<<"stream">> := <<"true">>}, _, _) ->
+init(Req, <<"GET">>, Info, #{<<"stream">> := <<"true">>} = QS, _, _) ->
     %% An event stream can be established with any member of
     %% the cluster.
     Headers = [{<<"content-type">>, <<"text/event-stream">>},
@@ -45,7 +48,10 @@ init(Req, <<"GET">>, Info, #{<<"stream">> := <<"true">>}, _, _) ->
     tansu_api:kv_subscribe(key(Req)),
     {cowboy_loop,
      cowboy_req:chunked_reply(200, Headers, Req),
-     #{info => Info}};
+     #{info => Info,
+       path => cowboy_req:path(Req),
+       key => key(Req),
+       qs => QS}};
 
 init(Req, <<"GET">>, #{role := follower, leader := _, cluster := _} = Info, #{<<"role">> := <<"any">>} = QS, _, _) ->
     %% followers with an established leader and cluster can
@@ -431,6 +437,14 @@ resource_exists(Req, _, #{value := {error, not_leader}} = State) ->
 resource_exists(Req, _, State) ->
     {true, Req, State}.
 
+
+info(#{data := #{metadata := #{tansu := #{origin := _}}}, module := tansu_sm}, Req, #{qs := #{<<"children">> := <<"false">>}} = State) ->
+    %% Change events that contain an origin are from a child and
+    %% should be ignored when children is false.
+    {ok, Req, State};
+
+info(#{data := #{metadata := #{tansu := #{origin := Key} = Tansu} = Metadata} = Data, module := tansu_sm} = Info, Req, State) ->
+    info(Info#{data := Data#{key := Key, metadata := Metadata#{tansu := maps:without([origin], Tansu)}}}, Req, State);
 
 info(#{id := Id, event := Event, data := #{metadata := #{tansu := #{content_type := <<"application/json">>}}, value := Value} = Data, module := tansu_sm}, Req, State) ->
     {tansu_stream:chunk(Id, Event, Data#{value := jsx:decode(Value)}, Req), Req, State};

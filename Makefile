@@ -15,7 +15,7 @@
 #
 PROJECT = tansu
 PROJECT_DESCRIPTION = Tansu distributed key/value and lock store
-PROJECT_VERSION = 0.24.0
+PROJECT_VERSION = 0.25.0
 
 DEPS = \
 	cowboy \

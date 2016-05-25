@@ -59,20 +59,21 @@ writes are handled by the leader) or can be handled by a `follower`
 
 ### Key Value Store
 
-Using a random node in the cluster stream changes to the key "hello":
+Stream changes to any key below "hello":
 
 ```shell
-curl -i -s http://${RANDOM_IP}/api/keys/hello?stream=true
+curl -i -s "http://${RANDOM_IP}/api/keys/hello?stream=true&children=true"
 ```
 
-Note that you can create streams from keys that do not currently exist
+Note that you can create streams for keys that do not currently exist
 in the store. Once a value has been assigned to the key the stream
-will issue change notifications.
+will issue change notifications. You can also listen for changes to
+any key contained under the sub hierarchy by adding `children=true` to
+the query.
 
 #### Set
 
-In another shell assign the value "world" to the key "hello" using a
-random member of the cluster:
+In another shell assign the value "world" to the key "hello":
 
 ```shell
 curl -X PUT -i -s http://${RANDOM_IP}/api/keys/hello -d value=world
@@ -81,9 +82,23 @@ curl -X PUT -i -s http://${RANDOM_IP}/api/keys/hello -d value=world
 The stream will now contain a `create` notification:
 
 ```json
-id: -576460752303423294
+id: 1
 event: create
-data: {"category":"user","key":"/hello","metadata":{"content_type":"application/x-www-form-urlencoded"},"value":"world"}
+data: {"category":"user","key":"/hello","metadata":{"tansu":{"content_type":"text/plain","created":1,"parent":"/","updated":1}},"value":"world"}
+```
+
+Or a key that is below "hello":
+
+```shell
+curl -X PUT -i -s http://${RANDOM_IP}/api/keys/hello/joe -d value=mike
+```
+
+The stream will now contain a `create` notification:
+
+```shell
+id: 2
+event: create
+data: {"category":"user","key":"/hello/joe","metadata":{"tansu":{"content_type":"text/plain","created":2,"parent":"/hello","updated":2}},"value":"mike"}
 ```
 
 Or with a content type:
@@ -95,17 +110,21 @@ curl -X PUT -H "Content-Type: application/json" -i http://${RANDOM_IP}/api/keys/
 With an update in the stream:
 
 ```json
-id: -576460752303423286
+id: 3
 event: set
-data: {"category":"user","key":"/hello","metadata":{"content_type":"application/json"},"value":{"stuff":true}}
+data: {"category":"user","key":"/hello","metadata":{"tansu":{"content_type":"application/json","created":1,"parent":"/","updated":3}},"previous":"world","value":{"stuff":true}}
 ```
 
 #### Get
 
-Ask a random member of the cluster for the current value of "hello":
+The current value of "hello":
 
 ```shell
 curl -i -s http://${RANDOM_IP}/api/keys/hello
+```
+
+```json
+{"stuff": true}
 ```
 
 #### Delete
@@ -119,9 +138,9 @@ curl -i -X DELETE http://${RANDOM_IP}/api/keys/hello
 The stream now contains a `delete` notification:
 
 ```json
-id: -576460752303423335
+id: 5
 event: delete
-data: {"category":"user","key":"/hello","metadata":{"content_type":"application/json"},"value":{"stuff":true}}
+data: {"category":"user","key":"/hello","metadata":{"tansu":{"content_type":"application/json","created":1,"parent":"/","updated":5}},"value":{"stuff":true}}
 ```
 
 #### TTL
@@ -137,17 +156,17 @@ The event stream will contain details of the `create` together with a TTL
 attribute:
 
 ```json
-id: -576460752303423262
+id: 6
 event: create
-data: {"category":"user","key":"/hello","metadata":{"content_type":"application/json"},"ttl":10,"value":{"ephemeral":true}}
+data: {"category":"user","key":"/hello","metadata":{"tansu":{"content_type":"application/json","created":6,"parent":"/","ttl":10,"updated":6}},"value":{"ephemeral":true}}
 ```
 
 Ten seconds later when the key is removed:
 
 ```json
-id: -576460752303423238
+id: 7
 event: delete
-data: {"category":"user","value":{"ephemeral": true},"key":"/hello"}
+data: {"category":"user","key":"/hello","metadata":{"tansu":{"content_type":"application/json","created":6,"parent":"/","ttl":0,"updated":7}},"value":{"ephemeral":true}}
 ```
 
 ### Test and Set
@@ -158,16 +177,36 @@ Set the value of `/hello` to be `jack` only if that key does not already exist:
 curl -X PUT -i http://${RANDOM_IP}/api/keys/hello?prevExist=false -d value=jack
 ```
 
+The stream identifies test and set changes with `type=cas`:
+
+```json
+id: 8
+event: set
+data: {"category":"user","key":"/hello","metadata":{"tansu":{"content_type":"text/plain","created":8,"parent":"/","type":"cas","updated":8}},"value":"jack"}
+```
+
 Set the value of `/hello` to be `quentin` only if its current value is `jack`:
 
 ```shell
 curl -X PUT -i http://${RANDOM_IP}/api/keys/hello?prevValue=jack -d value=quentin
 ```
 
+```json
+id: 9
+event: set
+data: {"category":"user","key":"/hello","metadata":{"tansu":{"content_type":"text/plain","created":8,"parent":"/","type":"cas","updated":9}},"previous":"jack","value":"quentin"}
+```
+
 Delete the value of `/hello` only if its current value is `quentin`:
 
 ```shell
 curl -X DELETE -i http://${RANDOM_IP}/api/keys/hello?prevValue=quentin
+```
+
+```json
+id: 10
+event: delete
+data: {"category":"user","key":"/hello","metadata":{"tansu":{"content_type":"text/plain","created":8,"parent":"/","updated":10}},"value":"quentin"}
 ```
 
 
