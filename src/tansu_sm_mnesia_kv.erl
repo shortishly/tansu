@@ -295,28 +295,68 @@ do_test_and_delete(Category, Key, ExistingValue) ->
       end).
 
 
-write_tx(Category, Event, KV, Metadata, PreviousValue) ->
+write_tx(
+  Category,
+  Event,
+  KV,
+  Metadata,
+  PreviousValue) ->
     write_tx(Category, Event, KV, Metadata, PreviousValue, #{}).
 
-write_tx(Category, Event, #{value := NewValue} = KV, Metadata, #?MODULE{value = PreviousValue, content_type = <<"application/json">>} = ExistingValue, Commentary) ->
+write_tx(
+  Category,
+  Event,
+  #{value := NewValue} = KV,
+  Metadata,
+  #?MODULE{value = PreviousValue,
+           content_type = <<"application/json">>} = ExistingValue,
+  Commentary) ->
     Record = integrate_metadata(to_record(Category, KV), Metadata),
     mnesia:write(Record),
     notification(Event, Record, PreviousValue, Commentary),
-    {ok, NewValue, Metadata#{tansu => #{previous => metadata_from_record(ExistingValue, #{value => jsx:decode(PreviousValue)}),
-                                        current => metadata_from_record(Record)}}};
+    {ok,
+     NewValue,
+     Metadata#{
+       tansu => #{
+         previous => metadata_from_record(
+                       ExistingValue,
+                       #{value => jsx:decode(PreviousValue)}),
+         current => metadata_from_record(Record)}}};
 
-write_tx(Category, Event, #{value := NewValue} = KV, Metadata, #?MODULE{value = PreviousValue} = ExistingValue, Commentary) ->
+write_tx(
+  Category,
+  Event,
+  #{value := NewValue} = KV,
+  Metadata,
+  #?MODULE{value = PreviousValue} = ExistingValue,
+  Commentary) ->
     Record = integrate_metadata(to_record(Category, KV), Metadata),
     mnesia:write(Record),
     notification(Event, Record, PreviousValue, Commentary),
-    {ok, NewValue, Metadata#{tansu => #{previous => metadata_from_record(ExistingValue, #{value => PreviousValue}),
-                                        current => metadata_from_record(Record)}}};
+    {ok,
+     NewValue,
+     Metadata#{
+       tansu => #{
+         previous => metadata_from_record(
+                       ExistingValue,
+                       #{value => PreviousValue}),
+         current => metadata_from_record(Record)}}};
 
-write_tx(Category, Event, #{value := NewValue} = KV, Metadata, undefined = PreviousValue, Commentary) ->
+write_tx(
+  Category,
+  Event,
+  #{value := NewValue} = KV,
+  Metadata,
+  undefined = PreviousValue,
+  Commentary) ->
     Record = integrate_metadata(to_record(Category, KV), Metadata),
     mnesia:write(Record),
     notification(Event, Record, PreviousValue, Commentary),
-    {ok, NewValue, Metadata#{tansu => #{current => metadata_from_record(Record)}}}.
+    {ok,
+     NewValue,
+     Metadata#{
+       tansu => #{
+         current => metadata_from_record(Record)}}}.
 
 integrate_metadata(#?MODULE{key = {Category, Key}} = KV, Metadata) ->
     maps:fold(
@@ -366,8 +406,81 @@ to_record(Category, #{created := _} = M) ->
 to_record(Category, M) ->
     TxId = tansu_sm_mnesia_tx:next(),
     to_record(Category, M#{created => TxId, updated => TxId}).
-    
-notification(Event, #?MODULE{key = {Category, Key}, updated = Updated, value = Value, metadata = Metadata} = Record, undefined, Commentary) ->
+
+
+notification(
+  Event,
+  #?MODULE{parent = undefined} = Record,
+  Previous,
+  Commentary) ->
+    notify(
+      Event,
+      Record,
+      Previous,
+      Commentary);
+
+notification(
+  Event,
+  #?MODULE{parent = {_, Parent}} = Record,
+  Previous,
+  Commentary) ->
+    notify(
+      Event,
+      Record,
+      Previous,
+      Commentary),
+    notification(
+      Event,
+      Record,
+      Previous,
+      Commentary,
+      tl(
+        binary:split(
+          Parent,
+          <<"/">>,
+          [global]))).
+
+notification(_, _, _, _, []) ->
+    ok;
+notification(
+  Event,
+  #?MODULE{key = {Category, OriginKey}} = Record,
+  Previous,
+  Commentary,
+  Hierarchy) ->
+    notify(
+      Event,
+      Record#?MODULE{key = {Category, slash_separated(Hierarchy)}},
+      Previous,
+      Commentary#{origin => OriginKey}),
+    notification(
+      Event,
+      Record,
+      Previous,
+      Commentary,
+      lists:droplast(Hierarchy)).
+
+slash_separated([]) ->
+    <<"/">>;
+slash_separated(PathInfo) ->
+    lists:foldl(
+      fun
+          (Path, <<>>) ->
+              <<"/", Path/bytes>>;
+          (Path, A) ->
+              <<A/bytes, "/", Path/bytes>>
+      end,
+      <<>>,
+      PathInfo).
+
+notify(
+  Event,
+  #?MODULE{key = {Category, Key},
+           updated = Updated,
+           value = Value,
+           metadata = Metadata} = Record,
+  undefined,
+  Commentary) ->
     tansu_sm:notify(
       Category,
       Key,
@@ -376,7 +489,14 @@ notification(Event, #?MODULE{key = {Category, Key}, updated = Updated, value = V
         metadata => Metadata#{tansu => metadata_from_record(Record, Commentary)},
         value => Value});
 
-notification(Event, #?MODULE{key = {Category, Key}, updated = Updated, value = Value, metadata = Metadata} = Record, Previous, Commentary) ->
+notify(
+  Event,
+  #?MODULE{key = {Category, Key},
+           updated = Updated,
+           value = Value,
+           metadata = Metadata} = Record,
+  Previous,
+  Commentary) ->
     tansu_sm:notify(
       Category,
       Key,
