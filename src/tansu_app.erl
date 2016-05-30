@@ -26,7 +26,6 @@ start(_Type, _Args) ->
         {ok, Sup} = tansu_sup:start_link(),
         _ = start_advertiser(tansu_tcp_advertiser),
         [tansu:trace(true) || tansu_config:enabled(debug)],
-        add_cluster_members(),
         {ok, Sup, #{listeners => [start_http(http)]}}
     catch
         _:Reason ->
@@ -38,14 +37,6 @@ stop(#{listeners := Listeners}) ->
     lists:foreach(fun cowboy:stop_listener/1, Listeners);
 stop(_State) ->
     ok.
-
-add_cluster_members() ->
-    lists:foreach(
-      fun
-          (URI) ->
-              tansu_consensus:add_server(URI)
-      end,
-      string:tokens(tansu_config:cluster(members), ",")).
 
 start_advertiser(Advertiser) ->
     _ = [mdns_discover_sup:start_child(Advertiser) || tansu_config:can(discover)],

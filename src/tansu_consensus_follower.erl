@@ -13,13 +13,13 @@
 %% limitations under the License.
 
 -module(tansu_consensus_follower).
-
 -export([add_server/2]).
 -export([append_entries/2]).
 -export([append_entries_response/2]).
 -export([call_election/1]).
 -export([install_snapshot/2]).
 -export([log/2]).
+-export([ping/2]).
 -export([remove_server/2]).
 -export([request_vote/2]).
 -export([vote/2]).
@@ -29,10 +29,10 @@ add_server(_, #{change := _} = Data) ->
     %% change already in progress
     {next_state, follower, Data};
 
-add_server(URI, #{last_applied := 0, commit_index := 0} = Data) ->
-    {next_state, follower, tansu_consensus:do_add_server(URI, Data)};
+add_server(URI, Data) ->
+    {next_state, follower, tansu_consensus:do_add_server(URI, Data)}.
 
-add_server(_, Data) ->
+ping(_, Data) ->
     {next_state, follower, Data}.
 
 

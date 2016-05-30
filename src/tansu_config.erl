@@ -70,6 +70,8 @@ environment() ->
 acceptors(http) ->
     envy(to_integer, http_acceptors, 100).
 
+timeout(cluster_add_member) ->
+    envy(to_integer, timeout_cluster_add_member, 15000);
 timeout(election_low) ->
     envy(to_integer, timeout_election_low, 1500);
 timeout(election_high) ->

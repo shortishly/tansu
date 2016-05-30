@@ -21,9 +21,13 @@
 -export([heartbeat/5]).
 -export([install_snapshot/8]).
 -export([log/1]).
+-export([ping/1]).
 -export([request_vote/4]).
 -export([vote/3]).
 
+
+ping(Id) ->
+    #{ping => Id}.
 
 request_vote(Term, Candidate, LastLogIndex, LastLogTerm) ->
     #{request_vote => #{

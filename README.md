@@ -464,3 +464,4 @@ Tansu uses the following configuration environment.
 |TANSU\_TIMEOUT\_STREAM\_PING             |5000                 |
 |TANSU\_MINIMUM\_QUORUM                   |3                    |
 |TANSU\_MAXIMUM\_SNAPSHOT                 |3                    |
+|TANSU\_CLUSTER\_MEMBERS                  |                     |

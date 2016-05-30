@@ -23,7 +23,7 @@
 init(Req, State) ->
     TansuId = cowboy_req:header(<<"tansu-id">>, Req),
     {PeerIP, _} = cowboy_req:peer(Req),
-    TansuPort = cowboy_req:header(<<"tansu-port">>, Req),
+    TansuPort = cowboy_req:port(Req),
     init(Req, TansuId, inet:ntoa(PeerIP), TansuPort, State).
 
 
@@ -33,13 +33,15 @@ init(Req, TansuId, TansuHost, TansuPort, State) when TansuId == undefined orelse
     {ok, cowboy_req:reply(400, Req), State};
 
 init(Req, TansuId, TansuHost, TansuPort, State) ->
+    Outgoing = outgoing(self()),
     tansu_consensus:add_connection(
       self(),
       TansuId,
       TansuHost,
       any:to_integer(TansuPort),
-      outgoing(self()),
+      Outgoing,
       closer(self())),
+    ok = Outgoing(tansu_rpc:ping(tansu_consensus:id())),
     {cowboy_websocket, Req, State}.
 
 
