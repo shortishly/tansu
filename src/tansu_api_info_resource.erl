@@ -14,27 +14,45 @@
 
 -module(tansu_api_info_resource).
 
+-export([allowed_methods/2]).
+-export([content_types_provided/2]).
 -export([init/2]).
+-export([options/2]).
+-export([to_json/2]).
 
-init(Req, Opts) ->
+
+init(Req, _) ->
+    {cowboy_rest, tansu_cors:allow_origin(Req), #{}}.
+
+allowed_methods(Req, State) ->
+    {allowed(), Req, State}.
+
+options(Req, State) ->
+    tansu_cors:options(Req, State, allowed()).
+
+content_types_provided(Req, State) ->
+    {[{{<<"application">>, <<"json">>, '*'}, to_json}], Req, State}.
+
+allowed() ->
+    [<<"GET">>,
+     <<"HEAD">>,
+     <<"OPTIONS">>].
+
+to_json(Req, State) ->
     [Major, Minor, Patch] = string:tokens(tansu:vsn(), "."),
-    {ok,
-     cowboy_req:reply(
-       200,
-       [{<<"content-type">>, <<"application/json">>}],
-       jsx:encode(
-         #{applications => lists:foldl(
-                             fun
-                                 ({Application, _, VSN}, A) ->
-                                     A#{Application => any:to_binary(VSN)}
-                             end,
-                             #{},
-                             application:which_applications()),
-           consensus => tansu_consensus:info(),
-           version => #{major => any:to_integer(Major),
-                        minor => any:to_integer(Minor),
-                        patch => any:to_integer(Patch)}}),
-       Req),
-     Opts}.
+    {jsx:encode(
+       #{applications => lists:foldl(
+                           fun
+                               ({Application, _, VSN}, A) ->
+                                   A#{Application => any:to_binary(VSN)}
+                           end,
+                           #{},
+                           application:which_applications()),
+         consensus => tansu_consensus:info(),
+         version => #{major => any:to_integer(Major),
+                      minor => any:to_integer(Minor),
+                      patch => any:to_integer(Patch)}}),
+     Req,
+     State}.
 
 

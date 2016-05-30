@@ -17,6 +17,7 @@
 -export([acceptors/1]).
 -export([batch_size/1]).
 -export([can/1]).
+-export([cluster/1]).
 -export([db_schema/0]).
 -export([directory/1]).
 -export([enabled/1]).
@@ -39,6 +40,9 @@ can(discover) ->
     envy(to_boolean, can_discover, true);
 can(mesh) ->
     envy(to_boolean, can_mesh, true).
+
+cluster(members) ->
+    envy(to_list, cluster_members, "").
 
 directory(snapshot) ->
     envy(to_list, snapshot_directory, "/snapshots").
@@ -66,6 +70,8 @@ environment() ->
 acceptors(http) ->
     envy(to_integer, http_acceptors, 100).
 
+timeout(cluster_add_member) ->
+    envy(to_integer, timeout_cluster_add_member, 15000);
 timeout(election_low) ->
     envy(to_integer, timeout_election_low, 1500);
 timeout(election_high) ->

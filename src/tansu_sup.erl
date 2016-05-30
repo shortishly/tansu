@@ -22,9 +22,14 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-    {ok, {#{}, [worker(tansu_consensus),
-                worker(tansu_kv_expiry),
-                worker(tansu_kv_snapshot)]}}.
+    children(
+      [worker(tansu_consensus),
+       worker(tansu_kv_expiry),
+       worker(tansu_kv_snapshot),
+       worker(tansu_cluster_membership)]).
+
+children(Children) ->
+    {ok, {#{}, Children}}.
 
 worker(Module) ->
     worker(Module, transient).

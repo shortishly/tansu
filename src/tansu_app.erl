@@ -38,7 +38,6 @@ stop(#{listeners := Listeners}) ->
 stop(_State) ->
     ok.
 
-
 start_advertiser(Advertiser) ->
     _ = [mdns_discover_sup:start_child(Advertiser) || tansu_config:can(discover)],
     _ = [mdns_advertise_sup:start_child(Advertiser) || tansu_config:can(advertise)].

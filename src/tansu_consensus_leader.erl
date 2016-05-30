@@ -18,6 +18,7 @@
 -export([append_entries_response/2]).
 -export([end_of_term/1]).
 -export([log/2]).
+-export([ping/2]).
 -export([remove_server/2]).
 -export([request_vote/2]).
 -export([transition_to_follower/1]).
@@ -28,6 +29,9 @@ add_server(_, #{change := _, match_indexes := _, next_indexes := _} = Data) ->
     {next_state, leader, Data};
 add_server(URI, #{match_indexes := _, next_indexes := _} = Data) ->
     {next_state, leader, tansu_consensus:do_add_server(URI, Data)}.
+
+ping(_, Data) ->
+    {next_state, leader, Data}.
 
 remove_server(_, #{change := _, match_indexes := _, next_indexes := _} = Data) ->
     %% change already in progress
