@@ -379,8 +379,7 @@ handle_info({gun_up, Peer, _}, Name, #{id := Id, connecting := Connecting} = Dat
         {ok, Path} ->
             gun:ws_upgrade(
               Peer, Path, [{<<"tansu-id">>, Id},
-                           {<<"tansu-host">>, any:to_binary(net_adm:localhost())},
-                           {<<"tansu-port">>, any:to_binary(tansu_config:port(http))}]),
+                           {<<"tansu-host">>, any:to_binary(net_adm:localhost())}]),
             {next_state, Name, Data};
 
         error ->
@@ -402,8 +401,8 @@ handle_info({gun_ws_upgrade, Peer, ok, _}, Name, #{connecting := C, change := #{
                end,
                fun
                    () ->
-                                      gun:close(Peer)
-                              end,
+                       gun:close(Peer)
+               end,
                maps:without([change], Data#{connecting := maps:without([Peer], C)}))};
 
         error ->
@@ -462,6 +461,16 @@ after_timeout(Event, Timeout, #{timer := Timer} = State) ->
     after_timeout(Event, Timeout, maps:without([timer], State));
 after_timeout(Event, Timeout, State) ->
     State#{timer => gen_fsm:send_event_after(Timeout, Event)}.
+
+do_demarshall(Pid, #{ping := From} = Command, Data) ->
+    eval_or_drop_duplicate_connection(
+      From,
+      Pid,
+      fun
+          () ->
+              demarshall(Pid, Command)
+      end,
+      Data);
 
 do_demarshall(Pid, #{request_vote := #{candidate := Candidate}} = Command, Data) ->
     eval_or_drop_duplicate_connection(
