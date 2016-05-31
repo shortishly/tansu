@@ -179,10 +179,14 @@ maybe_init_log(#{state_machine := undefined} = Data) ->
     tansu_consensus:do_log(
       #{m => tansu_sm,
         f => ckv_set,
-        a => [system, [<<"cluster">>], tansu_uuid:new(), #{}]},
+        a => [user, <<"/">>, #{}, #{}]},
       tansu_consensus:do_log(
         #{m => tansu_sm,
-          f => new}, Data));
+          f => ckv_set,
+          a => [system, [<<"cluster">>], tansu_uuid:new(), #{}]},
+        tansu_consensus:do_log(
+          #{m => tansu_sm,
+            f => new}, Data)));
 
 maybe_init_log(#{state_machine := _} = Data) ->
     Data.

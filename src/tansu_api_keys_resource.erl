@@ -237,7 +237,13 @@ key(Req) ->
     slash_separated(cowboy_req:path_info(Req)).
 
 parent(Req) ->
-    slash_separated(lists:droplast(cowboy_req:path_info(Req))).
+    case cowboy_req:path_info(Req) of
+        [] ->
+            <<"/">>;
+
+        Path ->
+            slash_separated(lists:droplast(Path))
+    end.
 
 slash_separated([]) ->
     <<"/">>;
