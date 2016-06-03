@@ -48,7 +48,10 @@ directory(snapshot) ->
     envy(to_list, snapshot_directory, "/snapshots").
 
 enabled(debug) ->
-    envy(to_boolean, debug, false).
+    envy(to_boolean, debug, false);
+
+enabled(http) ->
+    envy(to_boolean, http_enabled, true).
 
 sm() ->
     envy(to_atom, sm, tansu_sm_mnesia_kv).
