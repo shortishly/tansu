@@ -23,6 +23,7 @@
 -export([from_identity/2]).
 -export([info/3]).
 -export([init/2]).
+-export([options/2]).
 -export([resource_exists/2]).
 -export([terminate/3]).
 -export([to_identity/2]).
@@ -57,7 +58,7 @@ init(Req, <<"GET">>, #{role := follower, leader := _, cluster := _} = Info, #{<<
     %% followers with an established leader and cluster can
     %% handle simple KV GET requests.
     {cowboy_rest,
-     headers(Info, Req),
+     headers(Info, cors:allow_origin(Req)),
      #{info => Info,
        path => cowboy_req:path(Req),
        key => key(Req),
@@ -79,7 +80,7 @@ init(Req, _, #{role := follower, connections := Connections, leader := #{id := L
 init(Req, _, #{role := leader} = Info, QS, undefined, undefined) ->
     %% The leader can deal directly with any request.
     {cowboy_rest,
-     headers(Info, Req),
+     headers(Info, cors:allow_origin(Req)),
      #{info => Info,
        path => cowboy_req:path(Req),
        key => key(Req),
@@ -89,7 +90,7 @@ init(Req, _, #{role := leader} = Info, QS, undefined, undefined) ->
 init(Req, _, #{role := leader} = Info, QS, undefined, ContentType) ->
     %% The leader can deal directly with any request.
     {cowboy_rest,
-     headers(Info, Req),
+     headers(Info, cors:allow_origin(Req)),
      #{info => Info,
        content_type => ContentType,
        path => cowboy_req:path(Req),
@@ -100,7 +101,7 @@ init(Req, _, #{role := leader} = Info, QS, undefined, ContentType) ->
 init(Req, _, #{role := leader} = Info, QS, TTL, undefined) ->
     %% The leader can deal directly with any request.
     {cowboy_rest,
-     headers(Info, Req),
+     headers(Info, cors:allow_origin(Req)),
      #{info => Info,
        path => cowboy_req:path(Req),
        ttl => binary_to_integer(TTL),
@@ -111,7 +112,7 @@ init(Req, _, #{role := leader} = Info, QS, TTL, undefined) ->
 init(Req, _, #{role := leader} = Info, QS, TTL, ContentType) ->
     %% The leader can deal directly with any request.
     {cowboy_rest,
-     headers(Info, Req),
+     headers(Info, cors:allow_origin(Req)),
      #{info => Info,
        content_type => ContentType,
        path => cowboy_req:path(Req),
@@ -126,12 +127,18 @@ init(Req, _, _, _, _, _) ->
     {ok, service_unavailable(Req), #{}}.
 
 allowed_methods(Req, State) ->
-    {[<<"DELETE">>,
+    {allowed(), Req, State}.
+
+options(Req, State) ->
+    cors:options(Req, State, allowed()).
+
+allowed() ->
+    [<<"DELETE">>,
       <<"GET">>,
       <<"HEAD">>,
       <<"OPTIONS">>,
       <<"POST">>,
-      <<"PUT">>], Req, State}.
+      <<"PUT">>].
 
 content_types_accepted(Req, #{content_type := <<"application/x-www-form-urlencoded">> = ContentType} = State) ->
     {[{ContentType, from_form_urlencoded}], Req, State};

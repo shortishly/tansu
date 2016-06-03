@@ -21,13 +21,13 @@
 -export([to_json/2]).
 
 init(Req, _) ->
-    {cowboy_rest, tansu_cors:allow_origin(Req), #{}}.
+    {cowboy_rest, cors:allow_origin(Req), #{}}.
 
 allowed_methods(Req, State) ->
     {allowed(), Req, State}.
 
 options(Req, State) ->
-    tansu_cors:options(Req, State, allowed()).
+    cors:options(Req, State, allowed()).
 
 content_types_provided(Req, State) ->
     {[{{<<"application">>, <<"json">>, '*'}, to_json}], Req, State}.

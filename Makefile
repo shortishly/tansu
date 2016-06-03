@@ -18,6 +18,7 @@ PROJECT_DESCRIPTION = Tansu distributed key/value and lock store
 PROJECT_VERSION = 0.26.0
 
 DEPS = \
+	cors \
 	cowboy \
 	crown \
 	envy \
@@ -35,6 +36,7 @@ LOCAL_DEPS = \
 	mnesia \
 	sasl
 
+dep_cors = git https://github.com/shortishly/cors.git master
 dep_cowboy = git https://github.com/ninenines/cowboy.git 2.0.0-pre.3
 dep_crown = git https://github.com/shortishly/crown.git master
 dep_envy = git https://github.com/shortishly/envy.git master
