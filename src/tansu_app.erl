@@ -26,7 +26,7 @@ start(_Type, _Args) ->
         {ok, Sup} = tansu_sup:start_link(),
         _ = start_advertiser(tansu_tcp_advertiser),
         [tansu:trace(true) || tansu_config:enabled(debug)],
-        {ok, Sup, #{listeners => [start_http(http)]}}
+        {ok, Sup, #{listeners => [perhaps_start([http])]}}
     catch
         _:Reason ->
             {error, Reason}
@@ -41,6 +41,23 @@ stop(_State) ->
 start_advertiser(Advertiser) ->
     _ = [mdns_discover_sup:start_child(Advertiser) || tansu_config:can(discover)],
     _ = [mdns_advertise_sup:start_child(Advertiser) || tansu_config:can(advertise)].
+
+
+perhaps_start(Prefixes) ->
+    perhaps_start(Prefixes, []).
+
+perhaps_start([], A) ->
+    A;
+
+perhaps_start([Prefix | Prefixes], A) ->
+    case tansu_config:enabled(Prefix) of
+        false ->
+            perhaps_start(Prefixes, A);
+
+        true ->
+            perhaps_start(Prefixes, [start_http(Prefix) | A])
+    end.
+
 
 start_http(Prefix) ->
     {ok, _} = cowboy:start_http(
